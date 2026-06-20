@@ -1,9 +1,9 @@
 {
-  "name": "hytest-mcp-server",
+  "name": "child-safety-guide-mcp-server",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "HYTEST MCP server for PlayMCP in KC deployment.",
+  "description": "Pediatric symptom triage and medical handoff MCP server for PlayMCP in KC deployment.",
   "scripts": {
     "dev": "tsx src/server.ts",
     "build": "tsc -p tsconfig.json",
