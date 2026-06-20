@@ -22,7 +22,7 @@ function createServer(): McpServer {
   const server = new McpServer(
     {
       name: 'child-safety-guide-mcp',
-      version: '0.1.3'
+      version: '0.1.4'
     },
     {
       instructions:

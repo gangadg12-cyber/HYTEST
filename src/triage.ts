@@ -135,23 +135,10 @@ function detectBodyParts(text: string): string[] {
     }
   }
   const bodyParts = unique(detected);
-  const explicitNeck = [
-    '목덜미',
-    '목이',
-    '목을',
-    '목은',
-    '목에',
-    '목도',
-    '목 경직',
-    '목경직',
-    '목이 뻣뻣',
-    '목뻣뻣',
-    '목 아',
-    '목아',
-    '목 통증',
-    '목통증',
-    '고개'
-  ].some((keyword) => includesLoose(text, keyword));
+  const compactText = compact(text);
+  const explicitNeck =
+    /(목덜미|목경직|목이뻣뻣|목뻣뻣|고개)/.test(compactText) ||
+    /(^|[^발손])목(이|을|은|에|도|아|통증)/.test(compactText);
 
   if (bodyParts.includes('neck') && !explicitNeck) {
     return bodyParts.filter((bodyPart) => bodyPart !== 'neck');
