@@ -134,7 +134,30 @@ function detectBodyParts(text: string): string[] {
       detected.push(bodyPart);
     }
   }
-  return unique(detected);
+  const bodyParts = unique(detected);
+  const explicitNeck = [
+    '목덜미',
+    '목이',
+    '목을',
+    '목은',
+    '목에',
+    '목도',
+    '목 경직',
+    '목경직',
+    '목이 뻣뻣',
+    '목뻣뻣',
+    '목 아',
+    '목아',
+    '목 통증',
+    '목통증',
+    '고개'
+  ].some((keyword) => includesLoose(text, keyword));
+
+  if (bodyParts.includes('neck') && !explicitNeck) {
+    return bodyParts.filter((bodyPart) => bodyPart !== 'neck');
+  }
+
+  return bodyParts;
 }
 
 function detectKeywordHits(text: string): string[] {
