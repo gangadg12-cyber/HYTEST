@@ -1,6 +1,6 @@
 {
   "name": "child-safety-guide-mcp-server",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "type": "module",
   "description": "Pediatric symptom triage and medical handoff MCP server for PlayMCP in KC deployment.",

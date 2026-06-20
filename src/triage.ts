@@ -176,6 +176,7 @@ function detectRedFlags(
   categoryIds: string[]
 ): ParsedChildSymptoms['redFlags'] {
   const matched = RED_FLAG_RULES.filter((rule) => rule.keywords.some((keyword) => includesLoose(text, keyword))).map(toRedFlagResult);
+  const compactText = compact(text);
 
   if (typeof ageMonths === 'number' && ageMonths < 3 && typeof temperatureC === 'number' && temperatureC >= 38) {
     matched.push({
@@ -220,6 +221,19 @@ function detectRedFlags(
       urgency: 'emergency_room',
       reason: '두통 또는 구토에 목 경직이 동반되면 응급 평가가 필요한 감염/신경계 위험신호일 수 있습니다.',
       action: '가까운 응급실 또는 119 구급상황관리센터에 전화해 이동 필요성을 확인하세요.'
+    });
+  }
+
+  if (
+    /(세제|락스|표백제|세정제|농약|건전지|단추전지|자석|동전)/.test(compactText) &&
+    /(먹|삼켰|마셨|마신|섭취|입에넣)/.test(compactText)
+  ) {
+    matched.push({
+      id: 'possible_poisoning_or_foreign_body',
+      labelKo: '약물/이물/중독 의심',
+      urgency: 'call_119_now',
+      reason: '세제, 화학물질, 건전지, 자석 등 섭취 의심은 지체 없이 전문 상담이 필요한 위험신호입니다.',
+      action: '먹은 물질의 이름과 용기/포장지를 확인하고, 억지로 토하게 하지 말고 즉시 119 또는 응급의료상담에 연락하세요.'
     });
   }
 
@@ -383,7 +397,7 @@ export function triageSymptoms(input: {
     reasons.push('반복 구토/설사는 탈수 여부 확인이 필요합니다.');
   }
 
-  if (categoryIds.includes('trauma_burn') && /(못 걷|못걸|못 움직|물집|얼굴 화상|머리)/.test(parsed.originalText)) {
+  if (categoryIds.includes('trauma_burn') && /(못 걷|못걸|못 걸|못 움직|물집|얼굴 화상|머리)/.test(parsed.originalText)) {
     if (URGENCY_RANK.urgent_pediatric_care > URGENCY_RANK[urgency]) {
       urgency = 'urgent_pediatric_care';
     }
