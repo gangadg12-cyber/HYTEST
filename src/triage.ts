@@ -275,12 +275,29 @@ export function analyzeSymptoms(input: {
     .filter((item) => item.score > 0);
 
   const traumaScore = scoredCategories.find((item) => item.category.id === 'trauma_burn')?.score ?? 0;
+  const neurologicScore = scoredCategories.find((item) => item.category.id === 'neurologic')?.score ?? 0;
   const explicitSkinOrAllergy = ['피부', '발진', '두드러기', '가려', '알레르기', '입술', '얼굴'].some((keyword) =>
     includesLoose(text, keyword)
   );
+  const explicitNeurologic = [
+    '경련',
+    '발작',
+    '의식',
+    '깨워',
+    '반응',
+    '축 처',
+    '두통',
+    '어지',
+    '목이 뻣뻣',
+    '목 경직',
+    '마비',
+    '감각',
+    '말이 어눌'
+  ].some((keyword) => includesLoose(text, keyword));
 
   const categories = scoredCategories
     .filter((item) => !(item.category.id === 'skin_allergy' && traumaScore > item.score && !explicitSkinOrAllergy))
+    .filter((item) => !(item.category.id === 'neurologic' && traumaScore > neurologicScore && !explicitNeurologic))
     .sort((a, b) => b.score - a.score)
     .slice(0, 3)
     .map(({ category, score }) => ({
