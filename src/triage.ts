@@ -200,6 +200,19 @@ function detectRedFlags(
     });
   }
 
+  if (
+    (includesLoose(text, '목이 뻣뻣') || includesLoose(text, '목 경직')) &&
+    (includesLoose(text, '두통') || includesLoose(text, '머리') || includesLoose(text, '구토') || includesLoose(text, '토했'))
+  ) {
+    matched.push({
+      id: 'neck_stiffness_with_headache_or_vomit',
+      labelKo: '두통/구토 동반 목 경직',
+      urgency: 'emergency_room',
+      reason: '두통 또는 구토에 목 경직이 동반되면 응급 평가가 필요한 감염/신경계 위험신호일 수 있습니다.',
+      action: '가까운 응급실 또는 119 구급상황관리센터에 전화해 이동 필요성을 확인하세요.'
+    });
+  }
+
   return Object.values(
     matched.reduce<Record<string, ParsedChildSymptoms['redFlags'][number]>>((acc, item) => {
       acc[item.id] = item;
@@ -255,11 +268,19 @@ export function analyzeSymptoms(input: {
   const bodyParts = detectBodyParts(text);
   const symptomKeywords = detectKeywordHits(text);
 
-  const categories = SYMPTOM_CATEGORIES.map((category) => ({
+  const scoredCategories = SYMPTOM_CATEGORIES.map((category) => ({
     category,
     score: scoreCategory(text, category, bodyParts)
   }))
-    .filter((item) => item.score > 0)
+    .filter((item) => item.score > 0);
+
+  const traumaScore = scoredCategories.find((item) => item.category.id === 'trauma_burn')?.score ?? 0;
+  const explicitSkinOrAllergy = ['피부', '발진', '두드러기', '가려', '알레르기', '입술', '얼굴'].some((keyword) =>
+    includesLoose(text, keyword)
+  );
+
+  const categories = scoredCategories
+    .filter((item) => !(item.category.id === 'skin_allergy' && traumaScore > item.score && !explicitSkinOrAllergy))
     .sort((a, b) => b.score - a.score)
     .slice(0, 3)
     .map(({ category, score }) => ({

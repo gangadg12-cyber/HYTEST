@@ -22,7 +22,7 @@ function createServer(): McpServer {
   const server = new McpServer(
     {
       name: 'child-safety-guide-mcp',
-      version: '0.1.0'
+      version: '0.1.1'
     },
     {
       instructions:
@@ -34,9 +34,9 @@ function createServer(): McpServer {
     'analyze_child_symptoms',
     {
       title: 'Analyze Child Symptoms',
-      description: `Analyzes Korean natural-language pediatric symptom text with ${SERVICE_NAME}(${SERVICE_NAME_KO}) and extracts age, fever, symptom categories, body parts, red flags, and missing questions. This is not a diagnosis.`,
+      description: `Use for any Korean child symptom message, even vague or short text like fever only, urinary pain, cough, rash, injury, eye symptoms, vomiting, or abdominal pain. ${SERVICE_NAME}(${SERVICE_NAME_KO}) extracts age, fever, categories, body parts, red flags, and missing questions. This is not a diagnosis.`,
       inputSchema: {
-        text: z.string().min(2).max(2000).describe('Korean natural-language description of a child symptom situation.'),
+        text: z.string().min(2).max(2000).describe('Korean natural-language description of any child symptom situation, including vague fever or pain.'),
         childAgeMonths: z.number().int().min(0).max(216).optional().describe('Optional child age in months if known.'),
         temperatureC: z.number().min(30).max(45).optional().describe('Optional measured body temperature in Celsius.')
       },
@@ -55,9 +55,9 @@ function createServer(): McpServer {
     'triage_child_urgency',
     {
       title: 'Triage Child Urgency',
-      description: `Classifies pediatric symptom urgency with ${SERVICE_NAME}(${SERVICE_NAME_KO}) using deterministic red-flag rules. Returns 119, ER, urgent pediatric care, outpatient, or observation guidance without diagnosing.`,
+      description: `Use whenever the user describes a child symptom or asks what to do, whether to call 119, go to an ER, visit pediatrics, or observe at home. Handles fever, urinary pain, breathing, vomiting, rash, injury, eye, neurologic, and vague missing-info cases with deterministic red-flag rules. Returns 119, ER, urgent pediatric care, outpatient, or observation guidance without diagnosing.`,
       inputSchema: {
-        text: z.string().min(2).max(2000).describe('Korean natural-language child symptom description.'),
+        text: z.string().min(2).max(2000).describe('Korean natural-language child symptom description, even if details are incomplete.'),
         childAgeMonths: z.number().int().min(0).max(216).optional().describe('Optional child age in months.'),
         temperatureC: z.number().min(30).max(45).optional().describe('Optional measured body temperature in Celsius.')
       },
@@ -76,7 +76,7 @@ function createServer(): McpServer {
     'find_child_medical_facilities',
     {
       title: 'Find Child Medical Facilities',
-      description: `Finds or prepares lookup links for nearby Korean emergency rooms, pediatric clinics, moonlight pediatric hospitals, or specialty clinics with ${SERVICE_NAME}(${SERVICE_NAME_KO}). Uses public emergency data when configured.`,
+      description: `Use when the user gives a Korean location and asks for nearby emergency rooms, pediatric clinics, moonlight pediatric hospitals, or specialty clinics. If symptomText is provided, ${SERVICE_NAME}(${SERVICE_NAME_KO}) also includes urgency guidance so red flags such as breathing trouble still prioritize 119/ER. Uses public emergency data when configured.`,
       inputSchema: {
         location: z.string().min(2).max(100).describe('Korean location such as 서울 강남구, 경기 성남시 분당구, or a nearby landmark.'),
         need: z

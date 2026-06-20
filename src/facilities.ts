@@ -8,6 +8,13 @@ export interface FacilityLookupResult {
   location: string;
   need: FacilityNeed;
   suggestedSpecialty: string;
+  triage?: {
+    urgency: string;
+    urgencyLabel: string;
+    reasons: string[];
+    nextActions: string[];
+    redFlags: string[];
+  };
   facilities: Array<{
     name: string;
     address?: string;
@@ -178,6 +185,7 @@ export async function findFacilities(input: {
 }): Promise<FacilityLookupResult> {
   const location = input.location.trim();
   const resolvedNeed = input.need ?? inferFacilityNeed(input.symptomText);
+  const symptomTriage = input.symptomText ? triageSymptoms({ text: input.symptomText }).triage : undefined;
   const specialty = inferSpecialty(resolvedNeed, input.symptomText);
   const links = makeLinks(location, resolvedNeed, specialty);
   const liveFacilities = resolvedNeed === 'emergency_room' ? await tryEmergencyApi(location) : [];
@@ -203,13 +211,23 @@ export async function findFacilities(input: {
     location,
     need: resolvedNeed,
     suggestedSpecialty: specialty,
+    triage: symptomTriage
+      ? {
+          urgency: symptomTriage.urgency,
+          urgencyLabel: symptomTriage.urgencyLabel,
+          reasons: symptomTriage.reasons,
+          nextActions: symptomTriage.nextActions,
+          redFlags: symptomTriage.redFlags.map((flag) => flag.labelKo)
+        }
+      : undefined,
     facilities: fallbackFacilities,
     links,
     bookingSupport: [
       '실제 예약 API가 연결되지 않은 경우 자동 예약은 수행하지 않습니다.',
+      symptomTriage ? `증상 긴급도: ${symptomTriage.urgencyLabel}` : '',
       '전화 문의 시 아이 나이, 체온, 주요 증상, 시작 시각, 위험신호 여부를 먼저 말하세요.',
       '응급 증상이 있으면 예약을 기다리지 말고 119 또는 응급실을 우선 이용하세요.'
-    ],
+    ].filter(Boolean),
     disclaimer: DISCLAIMER
   };
 }

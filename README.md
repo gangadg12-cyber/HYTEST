@@ -66,6 +66,12 @@ PAT: leave empty for a public repository
 
 After the server becomes active, copy the Endpoint URL and register it in the PlayMCP console. Use "정보 불러오기" to confirm all six tools are listed.
 
+Current KC endpoint used for PlayMCP draft validation:
+
+```text
+https://child-safety-guide-mcp.playmcp-endpoint.kakaocloud.io/mcp
+```
+
 ## Verification Flow
 
 1. Check `/healthz`.
@@ -75,3 +81,16 @@ After the server becomes active, copy the Endpoint URL and register it in the Pl
 5. Register the endpoint in PlayMCP.
 6. Run the prompts in `test-prompts/playmcp-child-triage-prompts.md`.
 7. Compare PlayMCP output with the expected urgency/category in `test-prompts/verification-table.md`.
+
+## PlayMCP Chat Validation
+
+Round 1 was run in PlayMCP chat on 2026-06-20 with 30 prompts. The draft MCP was added to the PlayMCP toolbox and all six tools were visible. Results are recorded in `test-prompts/verification-table.md`.
+
+Round 1 found these fix targets:
+
+- Headache + neck stiffness + vomiting should return ER guidance.
+- Vague urinary pain/fever and fever-only prompts should route to the Child Safety Guide tools.
+- Facility lookup with breathing trouble should include urgent 119/ER triage context.
+- Ankle/sprain checklist should stay trauma/orthopedic focused.
+
+These fixes are applied in source and require KC redeploy plus PlayMCP "정보 불러오기" before Round 2 chat recheck.
