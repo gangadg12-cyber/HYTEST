@@ -1,4 +1,4 @@
-import { OFFICIAL_DATA_SOURCES, type IntegrationBoundary } from './kepcoData.js';
+import { getUserVisibleOfficialDataSources, type IntegrationBoundary, type OfficialDataSource } from './kepcoData.js';
 
 export type ChargerStatus = 'available' | 'charging' | 'reserved' | 'faulted' | 'unknown';
 
@@ -78,7 +78,7 @@ export interface EvChargingPlanResult {
     actualReservationRequires: string[];
     integrationBoundary: IntegrationBoundary;
   };
-  officialDataSources: typeof OFFICIAL_DATA_SOURCES;
+  officialDataSources: OfficialDataSource[];
   disclaimer: string;
 }
 
@@ -316,7 +316,7 @@ function buildVisitPlanText(
       '도착 예정시간, 경로/방향, 커넥터 타입, 충전소 후보 상태를 더 넣으면 다시 플랜을 만들 수 있습니다.',
       dataMode === 'demo_static_candidates'
         ? '현재는 실시간 API가 아닌 데모 후보 기준이라 “예약 확정”이 아니라 제한적 방문 플랜만 가능합니다.'
-        : '제공된 후보 기준 방문 플랜이며, 예약 확정은 충전사업자 관제 API/OCPP 연동이 필요합니다.'
+        : '제공된 후보 기준 방문 플랜이며, 예약 확정은 충전사업자 예약/관제 API 연동이 필요합니다.'
     ].join('\n');
   }
 
@@ -335,8 +335,8 @@ function buildVisitPlanText(
   lines.push(
     '',
     dataMode === 'demo_static_candidates'
-      ? '현재 후보는 실시간 API가 아닌 데모 데이터입니다. MVP에서는 예약 확정이 아니라 방문 플랜과 대체 후보를 제공합니다.'
-      : '사용자가 제공한 후보 기준 방문 플랜입니다. 실제 예약 확정은 충전사업자 관제 API/OCPP 예약 기능 연계가 필요합니다.'
+      ? '현재 후보는 실시간 API가 아닌 데모 데이터입니다. 공공데이터포털 충전소 API 또는 제공 후보를 연결하면 상태 기반 방문 플랜까지 가능합니다. 예약 확정은 별도 연계가 필요합니다.'
+      : '사용자가 제공한 후보 기준 방문 플랜입니다. 실제 예약 확정은 충전사업자 예약/관제 API 연계가 필요합니다.'
   );
   return lines.join('\n');
 }
@@ -380,16 +380,16 @@ export function planEvChargingVisit(input: EvChargingPlanInput): EvChargingPlanR
           ? '실시간 상태 API가 없는 경우 데모/제공 후보 기반의 제한적 충전 방문 플랜과 대체 후보만 제공합니다.'
           : '제공된 후보 상태 기준 도착시점 방문 플랜, 대체 후보, 예약 요청서 수준까지 제공합니다.',
       actualReservationRequires: [
-        '충전사업자(CPO) 관제 API',
+        '충전사업자(CPO) 예약/관제 API',
         '충전기 원격 인증 또는 예약 상태 제어',
-        'OCPP ReserveNow/CancelReservation 또는 사업자별 동등 기능',
+        '사업자별 예약 생성/취소 기능',
         '회원/차량/결제 수단 연동',
         '노쇼/지연/취소 운영정책'
       ],
       integrationBoundary: 'needs_partner_agreement'
     },
-    officialDataSources: OFFICIAL_DATA_SOURCES.filter((source) =>
-      ['keco_ev_charger_api', 'ex_rest_area_charger_data', 'ocpp_standard'].includes(source.id)
+    officialDataSources: getUserVisibleOfficialDataSources().filter((source) =>
+      ['keco_ev_charger_api', 'ex_rest_area_charger_data'].includes(source.id)
     ),
     disclaimer:
       dataMode === 'demo_static_candidates'

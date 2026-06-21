@@ -3,6 +3,7 @@ import {
   CIVIL_SERVICE_ITEMS,
   OFFICIAL_DATA_SOURCES,
   OFFICIAL_LINKS,
+  getUserVisibleOfficialDataSources,
   type CivilServiceType,
   type IntegrationBoundary,
   type KepcoCivilServiceItem
@@ -54,6 +55,7 @@ export interface CivilServiceMatch {
 }
 
 export interface CivilServiceCatalogOptions {
+  query?: string;
   category?: string;
   limit?: number;
   includeDetails?: boolean;
@@ -389,7 +391,7 @@ export function getKepcoIntegrationStatus(): {
       '필요 정보/서류 체크리스트 생성',
       '한전ON 제출 전 신청/문의 문안 작성',
       '한전ON 공식 메뉴 링크 연결',
-      '전기차 충전소 공개 API 구조에 맞춘 도착시점 방문 플랜 생성',
+      '공공데이터포털 전기차 충전소 API 또는 사용자가 제공한 충전소 후보 기반 도착시점 방문 플랜 생성',
       '실시간 충전소 API가 없어도 사용자가 제공한 후보 또는 데모 후보 기준의 제한적 방문 플랜 생성'
     ],
     needsKepcoOrUserAuth: [
@@ -401,7 +403,7 @@ export function getKepcoIntegrationStatus(): {
       '한전ON 민원 접수 결과 조회'
     ],
     needsPartnerAgreement: [
-      '충전사업자 관제 API를 통한 실제 충전소 예약 확정',
+      '충전사업자 예약/관제 API를 통한 실제 충전소 예약 확정',
       '예약자 외 충전 차단 또는 원격 인증',
       '충전 결제 및 회원 연동',
       '차량 제조사 배터리/도착예정시간 연동'
@@ -413,7 +415,7 @@ export function getKepcoIntegrationStatus(): {
       '인증 필요한 건 신청서 초안과 필요서류 체크리스트 생성',
       '한전ON 공식 메뉴로 handoff'
     ],
-    dataSources: OFFICIAL_DATA_SOURCES,
+    dataSources: getUserVisibleOfficialDataSources(),
     civilServiceCatalog: {
       total: CIVIL_SERVICE_ITEMS.length,
       availableNow: CIVIL_SERVICE_ITEMS.filter((item) => item.boundary === 'available_now').length,
@@ -427,6 +429,7 @@ export function getKepcoIntegrationStatus(): {
 export function listKepcoCivilServiceCatalog(options: CivilServiceCatalogOptions = {}): {
   total: number;
   returned: number;
+  query?: string;
   categoryFilter?: string;
   includeDetails: boolean;
   categories: Array<{
@@ -444,9 +447,8 @@ export function listKepcoCivilServiceCatalog(options: CivilServiceCatalogOptions
   summaryText: string;
 } {
   const limit = Math.min(Math.max(options.limit ?? 20, 1), CIVIL_SERVICE_ITEMS.length);
-  const filtered = options.category
-    ? CIVIL_SERVICE_ITEMS.filter((item) => item.category.includes(options.category ?? ''))
-    : CIVIL_SERVICE_ITEMS;
+  const query = options.query ?? options.category;
+  const filtered = query ? CIVIL_SERVICE_ITEMS.filter((item) => catalogItemMatchesQuery(item, query)) : CIVIL_SERVICE_ITEMS;
   const limited = filtered.slice(0, limit);
   const categoryNames = Array.from(new Set(filtered.map((item) => item.category)));
   const categories = categoryNames.map((category) => {
@@ -470,6 +472,7 @@ export function listKepcoCivilServiceCatalog(options: CivilServiceCatalogOptions
   return {
     total: CIVIL_SERVICE_ITEMS.length,
     returned: limited.length,
+    query,
     categoryFilter: options.category,
     includeDetails: Boolean(options.includeDetails),
     categories,
@@ -481,4 +484,23 @@ export function listKepcoCivilServiceCatalog(options: CivilServiceCatalogOptions
       })
       .join('\n')
   };
+}
+
+function catalogItemMatchesQuery(item: KepcoCivilServiceItem, query: string): boolean {
+  const needle = compact(query);
+  if (!needle) {
+    return true;
+  }
+  const haystacks = [
+    item.category,
+    item.labelKo,
+    item.summary,
+    item.serviceType,
+    item.officialPath,
+    item.mcpAction,
+    ...item.keywords,
+    ...item.requiredInputs,
+    ...item.likelyDocuments
+  ];
+  return haystacks.some((value) => compact(value).includes(needle));
 }

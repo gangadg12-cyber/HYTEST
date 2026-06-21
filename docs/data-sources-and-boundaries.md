@@ -47,7 +47,7 @@ These actions require an external operator to reserve or control a physical char
 - Confirmed EV charger reservation.
 - Blocking non-reserved users at the charger.
 - CPO account, payment, and membership integration.
-- OCPP `ReserveNow`/`CancelReservation` or provider-specific equivalent.
+- Provider-specific reservation creation/cancel and backend charger control.
 - Reservation no-show, delay, and cancel policy enforcement.
 
 The MVP therefore implements "reservation-style visit planning" rather than "confirmed reservation".
@@ -56,5 +56,5 @@ The MVP therefore implements "reservation-style visit planning" rather than "con
 
 - Tariff data should be refreshed when KEPCO changes rates, climate/environment charge, or fuel adjustment charge.
 - KEPCO ON civil-service catalog should be checked before final submission because menu names can change.
-- EV charger status needs live public API or CPO API data in production. Demo candidates are only for PlayMCP behavior testing.
+- EV charger status can use the public EV charger API or user-provided candidate data. Demo candidates are only for PlayMCP behavior testing when no live API response is supplied.
 - EV connector matching must be exact. A CHAdeMO request must not recommend a DC Combo charger as Plan A or Plan B.

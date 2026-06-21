@@ -44,6 +44,13 @@ const estimate = estimateBill({
 assert.equal(estimate.additionalMonthlyKwh, 90);
 assert.ok(typeof estimate.increaseWon === 'number' && estimate.increaseWon > 0);
 
+const dryerMissingUsage = estimateBill({
+  text: '소비전력은 모르는데 건조기 한 달 쓰면 대략 계산 가능해?'
+});
+assert.equal(dryerMissingUsage.parsed.applianceName, '의류건조기');
+assert.equal(dryerMissingUsage.parsed.powerW, 1200);
+assert.ok(dryerMissingUsage.parsed.missingFields.includes('하루 사용시간'));
+
 const scenarios = compareUsageScenarios({
   text: '월 350kWh 쓰고 에어컨 1800W를 비교해줘',
   scenarioHoursPerDay: [4, 8, 12, 24],
@@ -73,6 +80,9 @@ assert.ok(catalog.summaryText.includes('건'));
 
 const catalogDetails = listKepcoCivilServiceCatalog({ includeDetails: true, limit: 5 });
 assert.equal(catalogDetails.items?.length, 5);
+
+const contractExpansion = listKepcoCivilServiceCatalog({ query: '증설', includeDetails: true, limit: 10 });
+assert.ok(contractExpansion.items?.some((item) => item.labelKo.includes('증설')));
 
 const facilityRefund = classifyCivilServiceCatalog('시설부담금 환불 대상금액 조회는 어디 민원이야?', 3);
 assert.equal(facilityRefund.matches[0]?.labelKo, '시설부담금 환불 대상금액 조회');
@@ -106,6 +116,8 @@ assert.equal(evPlan.parsed.arrivalInMinutes, 30);
 assert.equal(evPlan.parsed.desiredKwh, 40);
 assert.ok(evPlan.planA);
 assert.equal(evPlan.reservationBoundary.integrationBoundary, 'needs_partner_agreement');
+assert.ok(evPlan.officialDataSources.some((source) => source.id === 'keco_ev_charger_api'));
+assert.ok(!evPlan.officialDataSources.some((source) => source.id === 'ocpp_standard'));
 
 const chademoPlan = planEvChargingVisit({
   text: '30분 뒤 영동고속도로 강릉방향에서 차데모 충전소만 찾아줘'
@@ -122,6 +134,8 @@ assert.ok(integration.needsPartnerAgreement.some((item) => item.includes('충전
 
 const sources = getOfficialDataSourcesResult();
 assert.ok(sources.markdownSummary.includes('https://online.kepco.co.kr/CUM083D00'));
+assert.ok(sources.markdownSummary.includes('https://www.data.go.kr/data/15076352/openapi.do'));
+assert.ok(!sources.markdownSummary.includes('openchargealliance'));
 assert.ok(sources.fileReturnNote.includes('MCP 표준'));
 
 console.log('Smoke tests passed');

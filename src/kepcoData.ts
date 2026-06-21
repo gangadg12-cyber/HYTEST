@@ -1,6 +1,6 @@
 export const SERVICE_NAME = 'kepco-electric-agent-mcp';
 export const SERVICE_NAME_KO = '한전 전기생활 도우미';
-export const SERVICE_VERSION = '0.3.1';
+export const SERVICE_VERSION = '0.3.2';
 
 export type VoltageType = 'low_voltage' | 'high_voltage';
 export type Season = 'summer' | 'other';
@@ -242,19 +242,24 @@ export function getOfficialDataSourcesResult(): {
   useNote: string;
   fileReturnNote: string;
 } {
+  const visibleSources = getUserVisibleOfficialDataSources();
   return {
-    total: OFFICIAL_DATA_SOURCES.length,
-    sources: OFFICIAL_DATA_SOURCES,
-    markdownSummary: OFFICIAL_DATA_SOURCES.map((source) => {
+    total: visibleSources.length,
+    sources: visibleSources,
+    markdownSummary: visibleSources.map((source) => {
       const usedFor = source.usedFor.join(', ');
       const limitation = source.limitation ? ` 제한: ${source.limitation}` : '';
       return `- [${source.label}](${source.url}) (${source.sourceType}) - 사용처: ${usedFor}. MVP: ${source.mvpUse}.${limitation}`;
     }).join('\n'),
     useNote:
-      '요금 계산, 민원 분류, 서식 안내, EV 충전 방문 플랜은 공식 페이지/공공데이터/표준 문서를 근거로 하되, 로그인·본인확인·결제·예약 확정은 별도 인증/API 연계가 필요합니다.',
+      '요금 계산, 민원 분류, 서식 안내, EV 충전 방문 플랜은 공식 페이지/공공데이터를 근거로 하되, 로그인·본인확인·결제·예약 확정은 별도 인증/API 연계가 필요합니다.',
     fileReturnNote:
       'MCP 표준은 resource link/embedded resource 형태의 파일성 응답을 지원하지만, 현재 PlayMCP 화면에서 다운로드 UX가 어떻게 노출되는지는 별도 검증이 필요합니다. MVP는 공식 URL, 작성 항목, 마크다운 초안 반환을 기본으로 둡니다.'
   };
+}
+
+export function getUserVisibleOfficialDataSources(): OfficialDataSource[] {
+  return OFFICIAL_DATA_SOURCES.filter((source) => source.id !== 'ocpp_standard');
 }
 
 export const APPLIANCE_PRESETS: Array<{

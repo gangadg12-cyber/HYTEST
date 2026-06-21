@@ -83,7 +83,7 @@ function createServer(): McpServer {
     },
     {
       instructions:
-        'Use KEPCO Electric Agent tools for Korean electricity bill estimation, appliance usage cost simulation, KEPCO civil service routing, and application draft preparation. Do not claim to submit KEPCO 민원, payment, or auto-transfer unless an authenticated KEPCO integration is added.'
+        'Use KEPCO Electric Agent tools for Korean electricity bill estimation, appliance usage cost simulation, KEPCO civil service routing, EV charging visit planning, and application draft preparation. For appliance questions, call the bill-estimation tool even when wattage or usage time is missing because the server has appliance presets and missing-field guidance. Do not claim to submit KEPCO 민원, payment, auto-transfer, or confirmed EV charger reservations unless an authenticated partner integration is added.'
     }
   );
 
@@ -92,7 +92,7 @@ function createServer(): McpServer {
     {
       title: 'Parse Electricity Usage Request',
       description:
-        'Use when the user asks in Korean about an appliance, electricity usage, kWh, 에어컨/건조기/전기차/히터 usage, or bill increase. Extracts appliance name, power W/kW, hours per day, days per month, current monthly kWh, voltage type, and missing fields before calculation.',
+        'Use when the user asks in Korean about an appliance, electricity usage, kWh, 에어컨/건조기/전기차/히터 usage, or bill increase. Use this even when the user says they do not know the wattage. Extracts appliance name, default/preset power W when available, hours per day, days per month, current monthly kWh, voltage type, and missing fields before calculation.',
       inputSchema: {
         text: z.string().min(2).max(2000).describe('Korean natural-language electricity usage or bill question.')
       },
@@ -112,7 +112,7 @@ function createServer(): McpServer {
     {
       title: 'Estimate Residential Electricity Bill',
       description:
-        'Use for Korean questions like "월 350kWh 쓰면 얼마야?", "7월 460kWh면?", "에어컨 1800W 하루 8시간 틀면 전기요금 얼마 늘어?", "월 350kWh 쓰는데 건조기 쓰면?", or "전기차 충전하면 요금?". Calculates current residential bill when only monthly kWh is given, or additional kWh and bill increase when appliance usage is given. This is an estimate, not an official bill.',
+        'Always use for Korean electricity-bill or appliance questions like "월 350kWh 쓰면 얼마야?", "7월 460kWh면?", "에어컨 1800W 하루 8시간 틀면 전기요금 얼마 늘어?", "소비전력은 모르는데 건조기 한 달 쓰면 대략 계산 가능해?", "월 350kWh 쓰는데 건조기 쓰면?", or "전기차 충전하면 요금?". The tool has appliance presets and returns missing fields, so call it even when wattage, hours, or days are incomplete. Calculates current residential bill when only monthly kWh is given, or additional kWh and bill increase when appliance usage is given. This is an estimate, not an official bill.',
       inputSchema: {
         text: z.string().min(2).max(2000).optional().describe('Natural-language question. The server will extract appliance, watts, hours, days, and base kWh when possible.'),
         applianceName: z.string().min(1).max(80).optional().describe('Optional appliance/product name such as 에어컨 or 건조기.'),
@@ -222,9 +222,10 @@ function createServer(): McpServer {
     {
       title: 'List KEPCO Civil Service Catalog',
       description:
-        'Returns a compact summary of the official 한전ON 민원신청 63-item catalog captured for this MVP. Defaults to category summaries only; set includeDetails=true for limited detailed items.',
+        'Returns a compact summary of the official 한전ON 민원신청 63-item catalog captured for this MVP. Defaults to category summaries only; set includeDetails=true for limited detailed items. Search filters match category, 민원명, keywords, summary, service type, and official path, so "증설", "자동이체", "서식" can be used as filters.',
       inputSchema: {
-        category: z.string().min(1).max(80).optional().describe('Optional category keyword filter.'),
+        query: z.string().min(1).max(80).optional().describe('Optional search keyword across category, label, keywords, summary, service type, and official path.'),
+        category: z.string().min(1).max(80).optional().describe('Backward-compatible search keyword filter. It also searches label and keywords, not just category.'),
         limit: z.number().int().min(1).max(63).optional().describe('Maximum detailed item count. Defaults to 20.'),
         includeDetails: z.boolean().optional().describe('Whether to include detailed catalog item objects. Defaults to false.')
       },
@@ -316,7 +317,7 @@ function createServer(): McpServer {
     {
       title: 'Plan EV Charging Visit',
       description:
-        'Use for EV charging route/visit planning such as "30분 뒤 덕평휴게소 근처에서 40kWh 충전하고 싶어" or "차데모 충전소만 찾아줘". Builds plan A/B using current charger candidates, arrival time, exact connector/output needs, and clearly separates MVP visit planning from real reservation confirmation.',
+        'Use for EV charging route/visit planning such as "30분 뒤 덕평휴게소 근처에서 40kWh 충전하고 싶어" or "차데모 충전소만 찾아줘". Builds plan A/B using public EV charger API candidates or user-provided charger candidates, arrival time, exact connector/output needs, and clearly separates status-based visit planning from real reservation confirmation.',
       inputSchema: {
         text: z.string().min(2).max(2000).optional().describe('Natural-language EV charging request.'),
         origin: z.string().min(1).max(120).optional().describe('Optional origin.'),
@@ -350,7 +351,7 @@ function createServer(): McpServer {
     {
       title: 'Get Official Data Sources',
       description:
-        'Returns official source inventory used by this MVP with Markdown URLs: KEPCO ON tariff/calculator/civil-service/form pages, public data files, EV charger public API, highway rest-area charger data, and OCPP standard boundary.',
+        'Returns official source inventory used by this MVP with Markdown URLs: KEPCO ON tariff/calculator/civil-service/form pages, public data files, EV charger public API, and highway rest-area charger data.',
       inputSchema: {},
       annotations: {
         title: 'Get Official Data Sources',

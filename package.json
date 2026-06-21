@@ -1,6 +1,6 @@
 {
   "name": "kepco-electric-agent-mcp-server",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "type": "module",
   "description": "KEPCO electricity bill simulation, civil-service preparation, and EV charging visit planning MCP server for PlayMCP in KC deployment.",

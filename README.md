@@ -37,9 +37,8 @@ It does not perform real KEPCO login, payment, auto-transfer registration, civil
 | Yearly tariff public data | https://www.data.go.kr/data/15090576/fileData.do | Tariff update reference |
 | KEPCO ON FAQ | https://www.data.go.kr/data/3068685/fileData.do | Civil-service FAQ and task guidance |
 | KEPCO ON civil-service catalog | https://online.kepco.co.kr/MIM001D00 | 63-item civil-service classification |
-| EV charger public API | https://www.data.go.kr/data/15076352/openapi.do | Charger location/status structure |
+| EV charger public API | https://www.data.go.kr/data/15076352/openapi.do | Charger location/status data for visit planning |
 | Expressway rest-area charger data | https://www.data.go.kr/data/15085543/fileData.do | Highway charging candidate planning |
-| OCPP standard | https://openchargealliance.org/protocols/open-charge-point-protocol/ | Real reservation integration boundary |
 
 ## Function Boundaries
 
@@ -52,7 +51,7 @@ Available now:
 - Natural-language classification against 63 한전ON civil-service items.
 - Required-input, likely-document, and missing-field checklist.
 - KEPCO/한전ON draft request text and official path handoff.
-- EV charging visit plan A/B using supplied charger candidates or demo candidates.
+- EV charging visit plan A/B using public EV charger API style candidates, supplied charger candidates, or demo candidates.
 
 Needs KEPCO login, user auth, or official API:
 
@@ -68,7 +67,7 @@ Needs partner agreement or CPO integration:
 - Confirmed EV charging reservation.
 - Blocking non-reserved users from a charger.
 - CPO account/payment integration.
-- OCPP `ReserveNow`/equivalent backend control.
+- Provider-specific reservation creation/cancel and backend charger control.
 - Reservation no-show/delay/cancel policy enforcement.
 
 ## Local Commands

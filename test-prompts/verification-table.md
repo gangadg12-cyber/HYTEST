@@ -15,7 +15,7 @@
 | 11 | EV charging visit plan | `plan_ev_charging_visit` | plan A/B, arrival-time reasoning, reservation boundary |
 | 12 | EV connector exact match | `plan_ev_charging_visit` | CHAdeMO request must not recommend DC Combo as Plan A/B |
 | 13 | MVP capability | `get_kepco_mcp_integration_status` | available vs needs-auth vs needs-partner list, including demo/provided-candidate EV boundary |
-| 14 | Official data inventory | `get_official_data_sources` | Markdown summary with KEPCO ON, form pages, public data, EV API, OCPP URLs |
+| 14 | Official data inventory | `get_official_data_sources` | Markdown summary with KEPCO ON, form pages, public data, and EV charger API URLs; OCPP link is not shown |
 
 ## Manual Regression Prompts
 
@@ -24,6 +24,7 @@
 월 350kWh 쓰면 주택용 저압 기준 전기요금이 얼마야?
 1500W 제품을 하루 2시간씩 10일, 20일, 30일 쓰는 경우 비교해줘.
 시설부담금 환불 대상금액 조회는 어디 민원이야?
+한전ON 민원신청 63건 중 증설 관련 항목만 상세로 보여줘.
 원격검침 AMI 신청서 초안 만들어줘.
 30분 뒤 영동고속도로 강릉방향에서 40kWh 충전하고 싶어. 플랜A/B 추천해줘.
 영동고속도로 강릉방향에서 차데모 충전소만 찾아줘. DC콤보는 빼줘.
