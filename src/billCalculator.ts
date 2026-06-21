@@ -314,11 +314,14 @@ function buildRecommendations(parsed: ParsedUsageRequest, additionalKwh?: number
 export function estimateBill(input: BillEstimateInput): BillEstimateResult {
   const parsed = parseUsageRequest(input);
   const tariff = getResidentialTariff(parsed.voltageType, parsed.season);
-  const canComputeUsage =
-    typeof parsed.powerW === 'number' && typeof parsed.hoursPerDay === 'number' && typeof parsed.daysPerMonth === 'number';
-  const additionalMonthlyKwh = canComputeUsage
-    ? Number(((parsed.powerW / 1000) * parsed.hoursPerDay * parsed.daysPerMonth).toFixed(3))
-    : undefined;
+  const { powerW, hoursPerDay, daysPerMonth } = parsed;
+  let additionalMonthlyKwh: number | undefined;
+  let usageFormula: string | undefined;
+
+  if (typeof powerW === 'number' && typeof hoursPerDay === 'number' && typeof daysPerMonth === 'number') {
+    additionalMonthlyKwh = Number(((powerW / 1000) * hoursPerDay * daysPerMonth).toFixed(3));
+    usageFormula = `${powerW}W / 1000 * ${hoursPerDay}시간/일 * ${daysPerMonth}일 = ${additionalMonthlyKwh}kWh`;
+  }
 
   const result: BillEstimateResult = {
     parsed,
@@ -337,7 +340,7 @@ export function estimateBill(input: BillEstimateInput): BillEstimateResult {
     return result;
   }
 
-  result.usageFormula = `${parsed.powerW}W / 1000 * ${parsed.hoursPerDay}시간/일 * ${parsed.daysPerMonth}일 = ${additionalMonthlyKwh}kWh`;
+  result.usageFormula = usageFormula;
 
   if (typeof parsed.baseMonthlyKwh === 'number') {
     const beforeBill = calculateResidentialBill({
