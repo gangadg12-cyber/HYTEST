@@ -136,6 +136,23 @@ const DEMO_HIGHWAY_CHARGERS: ChargerCandidateInput[] = [
   }
 ];
 
+function normalizeConnectorType(connectorType?: string): string | undefined {
+  if (!connectorType) {
+    return undefined;
+  }
+  const compact = connectorType.replace(/\s+/g, '').toLowerCase();
+  if (/차데모|chademo/.test(compact)) {
+    return 'CHAdeMO';
+  }
+  if (/dc콤보|콤보|ccs|dccombo/.test(compact)) {
+    return 'DC콤보';
+  }
+  if (/ac3상|ac\s*3|3상/.test(compact)) {
+    return 'AC3상';
+  }
+  return connectorType.trim();
+}
+
 function numberFromMatch(text: string, patterns: RegExp[]): number | undefined {
   for (const pattern of patterns) {
     const match = text.match(pattern);
@@ -178,7 +195,7 @@ function parseText(input: EvChargingPlanInput): Required<Pick<EvChargingPlanInpu
     if (text.includes('목포방향')) direction = '목포방향';
   }
 
-  let connectorType = input.connectorType;
+  let connectorType = normalizeConnectorType(input.connectorType);
   if (!connectorType) {
     if (/dc\s*콤보|dc콤보|콤보/i.test(text)) connectorType = 'DC콤보';
     if (/차데모|chademo/i.test(text)) connectorType = 'CHAdeMO';
@@ -212,6 +229,9 @@ function scoreCandidate(candidate: ChargerCandidateInput, parsed: ReturnType<typ
   const faultedCount = candidate.faultedCount ?? (status === 'faulted' ? 1 : 0);
   const totalCount = candidate.totalCount ?? Math.max(availableCount + chargingCount + faultedCount, 1);
   const estimatedArrivalMinutes = candidate.estimatedArrivalMinutes ?? parsed.arrivalInMinutes;
+  const requestedConnectorType = normalizeConnectorType(parsed.connectorType);
+  const candidateConnectorType = normalizeConnectorType(candidate.connectorType);
+  const connectorMismatch = Boolean(requestedConnectorType && (!candidateConnectorType || requestedConnectorType !== candidateConnectorType));
   const estimatedChargeMinutes =
     typeof parsed.desiredKwh === 'number' && outputKw > 0 ? Math.ceil((parsed.desiredKwh / outputKw) * 60 * 1.12) : undefined;
   const reasons: string[] = [];
@@ -235,9 +255,15 @@ function scoreCandidate(candidate: ChargerCandidateInput, parsed: ReturnType<typ
   } else {
     reasons.push(`${outputKw}kW 기준 충전 시간 추정이 가능합니다.`);
   }
-  if (parsed.connectorType && candidate.connectorType && !candidate.connectorType.includes(parsed.connectorType)) {
-    score -= 35;
-    reasons.push(`요청 커넥터(${parsed.connectorType})와 후보 커넥터(${candidate.connectorType})가 다를 수 있습니다.`);
+  if (connectorMismatch) {
+    score -= 100;
+    reasons.push(
+      candidateConnectorType
+        ? `요청 커넥터(${requestedConnectorType})와 후보 커넥터(${candidateConnectorType})가 일치하지 않아 추천 후보에서 제외합니다.`
+        : `요청 커넥터(${requestedConnectorType})가 있으나 후보 커넥터 정보가 없어 추천 후보에서 제외합니다.`
+    );
+  } else if (requestedConnectorType) {
+    reasons.push(`요청 커넥터(${requestedConnectorType})와 일치합니다.`);
   }
   if (candidate.statusUpdatedAt === 'demo' || !candidate.statusUpdatedAt) {
     score -= 5;
@@ -251,7 +277,7 @@ function scoreCandidate(candidate: ChargerCandidateInput, parsed: ReturnType<typ
     reasons.push(`${parsed.desiredKwh}kWh 충전에 약 ${estimatedChargeMinutes}분이 필요합니다(충전손실/감속 여유 포함).`);
   }
 
-  const recommendation: EvChargingPlanCandidate['recommendation'] = score >= 35 ? 'plan_a' : score >= 10 ? 'plan_b' : 'avoid';
+  const recommendation: EvChargingPlanCandidate['recommendation'] = connectorMismatch ? 'avoid' : score >= 35 ? 'plan_a' : score >= 10 ? 'plan_b' : 'avoid';
 
   return {
     name: candidate.name,
@@ -260,7 +286,7 @@ function scoreCandidate(candidate: ChargerCandidateInput, parsed: ReturnType<typ
     direction: candidate.direction,
     operator: candidate.operator,
     chargerType: candidate.chargerType,
-    connectorType: candidate.connectorType,
+    connectorType: candidateConnectorType ?? candidate.connectorType,
     outputKw,
     distanceKm: candidate.distanceKm,
     status,
@@ -277,9 +303,21 @@ function scoreCandidate(candidate: ChargerCandidateInput, parsed: ReturnType<typ
   };
 }
 
-function buildVisitPlanText(planA?: EvChargingPlanCandidate, planB?: EvChargingPlanCandidate): string {
+function buildVisitPlanText(
+  parsed: ReturnType<typeof parseText>,
+  dataMode: EvChargingPlanResult['dataMode'],
+  planA?: EvChargingPlanCandidate,
+  planB?: EvChargingPlanCandidate
+): string {
   if (!planA) {
-    return '현재 조건에 맞는 충전소 후보가 부족합니다. 도착 예정시간, 커넥터 타입, 경로 또는 후보 충전소 상태를 추가로 입력해 주세요.';
+    const connectorNote = parsed.connectorType ? ` 특히 요청 커넥터(${parsed.connectorType})와 정확히 일치하는 후보가 필요합니다.` : '';
+    return [
+      `현재 조건에 맞는 충전소 후보가 부족합니다.${connectorNote}`,
+      '도착 예정시간, 경로/방향, 커넥터 타입, 충전소 후보 상태를 더 넣으면 다시 플랜을 만들 수 있습니다.',
+      dataMode === 'demo_static_candidates'
+        ? '현재는 실시간 API가 아닌 데모 후보 기준이라 “예약 확정”이 아니라 제한적 방문 플랜만 가능합니다.'
+        : '제공된 후보 기준 방문 플랜이며, 예약 확정은 충전사업자 관제 API/OCPP 연동이 필요합니다.'
+    ].join('\n');
   }
 
   const lines = [
@@ -294,7 +332,12 @@ function buildVisitPlanText(planA?: EvChargingPlanCandidate, planB?: EvChargingP
     lines.push('', `[플랜B] ${planB.name}`, `- 현재 상태: ${planB.status}, 사용 가능 ${planB.availableCount}/${planB.totalCount}기`);
   }
 
-  lines.push('', '실제 예약 확정은 충전사업자 관제 API/OCPP 예약 기능 연계가 필요합니다. MVP에서는 방문 플랜과 대체 후보를 제공합니다.');
+  lines.push(
+    '',
+    dataMode === 'demo_static_candidates'
+      ? '현재 후보는 실시간 API가 아닌 데모 데이터입니다. MVP에서는 예약 확정이 아니라 방문 플랜과 대체 후보를 제공합니다.'
+      : '사용자가 제공한 후보 기준 방문 플랜입니다. 실제 예약 확정은 충전사업자 관제 API/OCPP 예약 기능 연계가 필요합니다.'
+  );
   return lines.join('\n');
 }
 
@@ -311,7 +354,8 @@ export function planEvChargingVisit(input: EvChargingPlanInput): EvChargingPlanR
     .map((candidate) => scoreCandidate(candidate, parsed))
     .sort((a, b) => b.availabilityScore - a.availabilityScore);
 
-  const planA = scored.find((candidate) => candidate.recommendation === 'plan_a') ?? scored[0];
+  const viable = scored.filter((candidate) => candidate.recommendation !== 'avoid');
+  const planA = viable.find((candidate) => candidate.recommendation === 'plan_a') ?? viable[0];
   const planB = scored.find((candidate) => candidate.name !== planA?.name && candidate.recommendation !== 'avoid');
 
   return {
@@ -329,9 +373,12 @@ export function planEvChargingVisit(input: EvChargingPlanInput): EvChargingPlanR
     planA,
     planB,
     candidates: scored,
-    visitPlanText: buildVisitPlanText(planA, planB),
+    visitPlanText: buildVisitPlanText(parsed, dataMode, planA, planB),
     reservationBoundary: {
-      currentMvp: '도착시점 기반 충전 방문 플랜, 대체 후보, 예약 요청서 수준까지 제공합니다.',
+      currentMvp:
+        dataMode === 'demo_static_candidates'
+          ? '실시간 상태 API가 없는 경우 데모/제공 후보 기반의 제한적 충전 방문 플랜과 대체 후보만 제공합니다.'
+          : '제공된 후보 상태 기준 도착시점 방문 플랜, 대체 후보, 예약 요청서 수준까지 제공합니다.',
       actualReservationRequires: [
         '충전사업자(CPO) 관제 API',
         '충전기 원격 인증 또는 예약 상태 제어',

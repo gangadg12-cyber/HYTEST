@@ -13,7 +13,7 @@ import {
   prepareApplicationDraft
 } from './civilService.js';
 import { planEvChargingVisit } from './evCharging.js';
-import { OFFICIAL_DATA_SOURCES, SERVICE_NAME, SERVICE_NAME_KO, SERVICE_VERSION, type CivilServiceType } from './kepcoData.js';
+import { getOfficialDataSourcesResult, SERVICE_NAME, SERVICE_NAME_KO, SERVICE_VERSION, type CivilServiceType } from './kepcoData.js';
 
 function jsonText(data: unknown): { content: Array<{ type: 'text'; text: string }> } {
   return {
@@ -112,7 +112,7 @@ function createServer(): McpServer {
     {
       title: 'Estimate Residential Electricity Bill',
       description:
-        'Use for Korean questions like "에어컨 1800W 하루 8시간 틀면 전기요금 얼마 늘어?", "월 350kWh 쓰는데 건조기 쓰면?", or "전기차 충전하면 요금?". Calculates additional kWh and estimated residential KEPCO bill increase using deterministic tariff rules. This is an estimate, not an official bill.',
+        'Use for Korean questions like "월 350kWh 쓰면 얼마야?", "7월 460kWh면?", "에어컨 1800W 하루 8시간 틀면 전기요금 얼마 늘어?", "월 350kWh 쓰는데 건조기 쓰면?", or "전기차 충전하면 요금?". Calculates current residential bill when only monthly kWh is given, or additional kWh and bill increase when appliance usage is given. This is an estimate, not an official bill.',
       inputSchema: {
         text: z.string().min(2).max(2000).optional().describe('Natural-language question. The server will extract appliance, watts, hours, days, and base kWh when possible.'),
         applianceName: z.string().min(1).max(80).optional().describe('Optional appliance/product name such as 에어컨 or 건조기.'),
@@ -158,6 +158,11 @@ function createServer(): McpServer {
         voltageType: voltageSchema.optional().describe('Residential voltage type. Defaults to low_voltage.'),
         billingMonth: z.number().int().min(1).max(12).optional().describe('Billing month.'),
         scenarioHoursPerDay: z.array(z.number().positive().max(24)).max(8).optional().describe('Usage-hour scenarios such as [4,8,12,24].'),
+        scenarioDaysPerMonth: z
+          .array(z.number().positive().max(31))
+          .max(8)
+          .optional()
+          .describe('Usage-day scenarios such as [10,20,30]. If used, hours per day must be known from text or scenarioHoursPerDay.'),
         daysPerMonth: z.number().positive().max(31).optional().describe('Monthly usage days. Defaults to 30 when omitted.')
       },
       annotations: {
@@ -217,8 +222,12 @@ function createServer(): McpServer {
     {
       title: 'List KEPCO Civil Service Catalog',
       description:
-        'Returns the official 한전ON 민원신청 63-item catalog captured for this MVP, including category, service type, integration boundary, expected inputs, likely documents, and MCP action.',
-      inputSchema: {},
+        'Returns a compact summary of the official 한전ON 민원신청 63-item catalog captured for this MVP. Defaults to category summaries only; set includeDetails=true for limited detailed items.',
+      inputSchema: {
+        category: z.string().min(1).max(80).optional().describe('Optional category keyword filter.'),
+        limit: z.number().int().min(1).max(63).optional().describe('Maximum detailed item count. Defaults to 20.'),
+        includeDetails: z.boolean().optional().describe('Whether to include detailed catalog item objects. Defaults to false.')
+      },
       annotations: {
         title: 'List KEPCO Civil Service Catalog',
         readOnlyHint: true,
@@ -227,7 +236,7 @@ function createServer(): McpServer {
         idempotentHint: true
       }
     },
-    async () => jsonText(listKepcoCivilServiceCatalog())
+    async (input) => jsonText(listKepcoCivilServiceCatalog(input))
   );
 
   server.registerTool(
@@ -307,7 +316,7 @@ function createServer(): McpServer {
     {
       title: 'Plan EV Charging Visit',
       description:
-        'Use for EV charging route/visit planning such as "30분 뒤 덕평휴게소 근처에서 40kWh 충전하고 싶어". Builds plan A/B using current charger candidates, arrival time, connector/output needs, and clearly separates MVP visit planning from real reservation confirmation.',
+        'Use for EV charging route/visit planning such as "30분 뒤 덕평휴게소 근처에서 40kWh 충전하고 싶어" or "차데모 충전소만 찾아줘". Builds plan A/B using current charger candidates, arrival time, exact connector/output needs, and clearly separates MVP visit planning from real reservation confirmation.',
       inputSchema: {
         text: z.string().min(2).max(2000).optional().describe('Natural-language EV charging request.'),
         origin: z.string().min(1).max(120).optional().describe('Optional origin.'),
@@ -316,7 +325,12 @@ function createServer(): McpServer {
         direction: z.string().min(1).max(80).optional().describe('Direction, e.g. 강릉방향.'),
         arrivalInMinutes: z.number().min(0).max(1440).optional().describe('Estimated arrival time in minutes.'),
         desiredKwh: z.number().positive().max(300).optional().describe('Desired charge amount in kWh.'),
-        connectorType: z.string().min(1).max(80).optional().describe('Connector type such as DC콤보.'),
+        connectorType: z
+          .string()
+          .min(1)
+          .max(80)
+          .optional()
+          .describe('Exact connector type such as DC콤보, CHAdeMO, or AC3상. Mismatched connectors must not be recommended.'),
         minimumOutputKw: z.number().positive().max(1000).optional().describe('Minimum desired charger output.'),
         candidates: z.array(chargerCandidateSchema).max(20).optional().describe('Optional charger status candidates from public API or user-provided data.')
       },
@@ -336,7 +350,7 @@ function createServer(): McpServer {
     {
       title: 'Get Official Data Sources',
       description:
-        'Returns official source inventory used by this MVP: KEPCO ON tariff/calculator/civil-service pages, public data files, EV charger public API, highway rest-area charger data, and OCPP standard boundary.',
+        'Returns official source inventory used by this MVP with Markdown URLs: KEPCO ON tariff/calculator/civil-service/form pages, public data files, EV charger public API, highway rest-area charger data, and OCPP standard boundary.',
       inputSchema: {},
       annotations: {
         title: 'Get Official Data Sources',
@@ -346,7 +360,7 @@ function createServer(): McpServer {
         idempotentHint: true
       }
     },
-    async () => jsonText(OFFICIAL_DATA_SOURCES)
+    async () => jsonText(getOfficialDataSourcesResult())
   );
 
   return server;

@@ -1,6 +1,6 @@
 export const SERVICE_NAME = 'kepco-electric-agent-mcp';
 export const SERVICE_NAME_KO = '한전 전기생활 도우미';
-export const SERVICE_VERSION = '0.3.0';
+export const SERVICE_VERSION = '0.3.1';
 
 export type VoltageType = 'low_voltage' | 'high_voltage';
 export type Season = 'summer' | 'other';
@@ -174,6 +174,41 @@ export const OFFICIAL_DATA_SOURCES: OfficialDataSource[] = [
     mvpUse: '자연어 민원 분류 카탈로그'
   },
   {
+    id: 'kepco_on_forms',
+    label: '한전ON 서식자료실',
+    url: 'https://online.kepco.co.kr/CUM083D00',
+    sourceType: 'official_page',
+    usedFor: ['공식 신청서/위임장/첨부서식 확인', '서식 다운로드 경로 안내'],
+    mvpUse: '민원 초안 작성 시 공식 서식 위치와 제출 전 확인 경로 안내',
+    limitation: 'PlayMCP MVP에서는 파일을 직접 생성/다운로드시키기보다 공식 URL과 작성 초안을 제공합니다.'
+  },
+  {
+    id: 'kepco_on_new_connection',
+    label: '한전ON 전기사용신청(신규) 안내',
+    url: 'https://online.kepco.co.kr/MIM028D00',
+    sourceType: 'official_page',
+    usedFor: ['전기사용신청 제출서류', '서식다운로드 경로', '신규 신청 안내'],
+    mvpUse: '신규 전기사용신청 작성 항목과 제출 전 체크리스트 안내',
+    limitation: '최종 접수는 한전ON 로그인/본인확인 또는 공식 API 권한이 필요합니다.'
+  },
+  {
+    id: 'kepco_on_contract_change',
+    label: '한전ON 전기사용 변경(증설등) 안내',
+    url: 'https://online.kepco.co.kr/MIM043D00',
+    sourceType: 'official_page',
+    usedFor: ['계약전력 변경/증설 안내', '제출서류', '공식 신청 경로'],
+    mvpUse: '증설/계약변경 민원 초안과 필요 정보 안내',
+    limitation: '최종 제출은 한전ON 인증 절차 또는 KEPCO 연계 API가 필요합니다.'
+  },
+  {
+    id: 'kepco_power_use_application_receipt',
+    label: '전기사용신청 접수서 예시',
+    url: 'https://home.kepco.co.kr/kepco/front/html/CY/F/A/CYFAPP0018103.pop3.html',
+    sourceType: 'official_page',
+    usedFor: ['전기사용신청 접수서 항목 확인', '신청서 작성 초안 근거'],
+    mvpUse: '자연어 입력을 공식 양식 항목에 맞춰 정리하는 근거'
+  },
+  {
     id: 'keco_ev_charger_api',
     label: '한국환경공단 전기자동차 충전소 정보 API',
     url: 'https://www.data.go.kr/data/15076352/openapi.do',
@@ -199,6 +234,28 @@ export const OFFICIAL_DATA_SOURCES: OfficialDataSource[] = [
     mvpUse: '실제 예약 확정은 충전사업자 관제 API/OCPP 연계가 필요하다는 경계 설명'
   }
 ];
+
+export function getOfficialDataSourcesResult(): {
+  total: number;
+  sources: OfficialDataSource[];
+  markdownSummary: string;
+  useNote: string;
+  fileReturnNote: string;
+} {
+  return {
+    total: OFFICIAL_DATA_SOURCES.length,
+    sources: OFFICIAL_DATA_SOURCES,
+    markdownSummary: OFFICIAL_DATA_SOURCES.map((source) => {
+      const usedFor = source.usedFor.join(', ');
+      const limitation = source.limitation ? ` 제한: ${source.limitation}` : '';
+      return `- [${source.label}](${source.url}) (${source.sourceType}) - 사용처: ${usedFor}. MVP: ${source.mvpUse}.${limitation}`;
+    }).join('\n'),
+    useNote:
+      '요금 계산, 민원 분류, 서식 안내, EV 충전 방문 플랜은 공식 페이지/공공데이터/표준 문서를 근거로 하되, 로그인·본인확인·결제·예약 확정은 별도 인증/API 연계가 필요합니다.',
+    fileReturnNote:
+      'MCP 표준은 resource link/embedded resource 형태의 파일성 응답을 지원하지만, 현재 PlayMCP 화면에서 다운로드 UX가 어떻게 노출되는지는 별도 검증이 필요합니다. MVP는 공식 URL, 작성 항목, 마크다운 초안 반환을 기본으로 둡니다.'
+  };
+}
 
 export const APPLIANCE_PRESETS: Array<{
   aliases: string[];

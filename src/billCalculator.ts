@@ -47,6 +47,8 @@ export interface BillBreakdown {
 
 export interface BillEstimateResult {
   parsed: ParsedUsageRequest;
+  currentBill?: BillBreakdown;
+  currentBillSummary?: string;
   additionalMonthlyKwh?: number;
   beforeBill?: BillBreakdown;
   afterBill?: BillBreakdown;
@@ -105,6 +107,17 @@ function parseNumberNear(text: string, patterns: RegExp[]): number | undefined {
     }
   }
   return undefined;
+}
+
+function parseScenarioDays(text?: string): number[] | undefined {
+  if (!text) {
+    return undefined;
+  }
+  const matches = Array.from(text.matchAll(/(\d+(?:\.\d+)?)\s*일/g))
+    .map((match) => Number.parseFloat(match[1] ?? ''))
+    .filter((value) => Number.isFinite(value) && value > 0 && value <= 31);
+  const unique = Array.from(new Set(matches));
+  return unique.length > 1 ? unique : undefined;
 }
 
 function inferAppliance(text: string): { applianceName?: string; powerW?: number; note?: string } {
@@ -178,7 +191,7 @@ export function parseUsageRequest(input: BillEstimateInput): ParsedUsageRequest 
   if (typeof baseMonthlyKwh !== 'number') {
     baseMonthlyKwh = parseNumberNear(normalized, [
       /(?:기존|현재|평소|이번달|월)\s*(?:사용량|전력량)?\s*(\d+(?:\.\d+)?)\s*(?:kwh|KWh|KWH|킬로와트시)/i,
-      /(\d+(?:\.\d+)?)\s*(?:kwh|KWh|KWH|킬로와트시)\s*(?:정도|쓰|사용)/
+      /(\d+(?:\.\d+)?)\s*(?:kwh|킬로와트시)\s*(?:정도|쓰|사용)/i
     ]);
   }
 
@@ -311,6 +324,21 @@ function buildRecommendations(parsed: ParsedUsageRequest, additionalKwh?: number
   return tips;
 }
 
+function formatWon(value: number): string {
+  return `${value.toLocaleString('ko-KR')}원`;
+}
+
+function summarizeBill(prefix: string, bill: BillBreakdown): string {
+  return [
+    `${prefix} 예상 전기요금은 ${formatWon(bill.estimatedTotalWon)}입니다.`,
+    `기본요금 ${formatWon(bill.basicChargeWon)}, 전력량요금 ${formatWon(bill.energyChargeWon)}, 기후환경요금 ${formatWon(
+      bill.climateEnvironmentChargeWon
+    )}, 연료비조정요금 ${formatWon(bill.fuelAdjustmentChargeWon)}, 부가가치세 ${formatWon(bill.vatWon)}, 전력산업기반기금 ${formatWon(
+      bill.powerIndustryFundWon
+    )} 기준입니다.`
+  ].join(' ');
+}
+
 export function estimateBill(input: BillEstimateInput): BillEstimateResult {
   const parsed = parseUsageRequest(input);
   const tariff = getResidentialTariff(parsed.voltageType, parsed.season);
@@ -336,6 +364,18 @@ export function estimateBill(input: BillEstimateInput): BillEstimateResult {
     disclaimer: '공식 청구액이 아닌 MCP 간이 추정입니다. 실제 납부액은 한전ON에서 확인해야 합니다.'
   };
 
+  if (typeof parsed.baseMonthlyKwh === 'number') {
+    result.currentBill = calculateResidentialBill({
+      monthlyKwh: parsed.baseMonthlyKwh,
+      voltageType: parsed.voltageType,
+      season: parsed.season,
+      climateEnvironmentWonPerKwh: input.climateEnvironmentWonPerKwh,
+      fuelAdjustmentWonPerKwh: input.fuelAdjustmentWonPerKwh
+    });
+    const voltageLabel = parsed.voltageType === 'low_voltage' ? '주택용 저압' : '주택용 고압';
+    result.currentBillSummary = summarizeBill(`${parsed.billingMonth}월 ${voltageLabel} ${parsed.baseMonthlyKwh}kWh`, result.currentBill);
+  }
+
   if (typeof additionalMonthlyKwh !== 'number') {
     return result;
   }
@@ -343,13 +383,10 @@ export function estimateBill(input: BillEstimateInput): BillEstimateResult {
   result.usageFormula = usageFormula;
 
   if (typeof parsed.baseMonthlyKwh === 'number') {
-    const beforeBill = calculateResidentialBill({
-      monthlyKwh: parsed.baseMonthlyKwh,
-      voltageType: parsed.voltageType,
-      season: parsed.season,
-      climateEnvironmentWonPerKwh: input.climateEnvironmentWonPerKwh,
-      fuelAdjustmentWonPerKwh: input.fuelAdjustmentWonPerKwh
-    });
+    const beforeBill = result.currentBill;
+    if (!beforeBill) {
+      return result;
+    }
     const afterBill = calculateResidentialBill({
       monthlyKwh: parsed.baseMonthlyKwh + additionalMonthlyKwh,
       voltageType: parsed.voltageType,
@@ -389,11 +426,13 @@ export function compareUsageScenarios(input: {
   voltageType?: VoltageType;
   billingMonth?: number;
   scenarioHoursPerDay?: number[];
+  scenarioDaysPerMonth?: number[];
   daysPerMonth?: number;
 }): {
   scenarios: Array<{
     label: string;
     hoursPerDay: number;
+    daysPerMonth: number;
     additionalMonthlyKwh: number;
     estimatedIncreaseWon?: number;
     assumedAfterMonthlyKwh?: number;
@@ -411,6 +450,7 @@ export function compareUsageScenarios(input: {
     daysPerMonth: input.daysPerMonth
   });
   const hours = input.scenarioHoursPerDay && input.scenarioHoursPerDay.length > 0 ? input.scenarioHoursPerDay : [4, 8, 12, 24];
+  const dayScenarios = (input.scenarioDaysPerMonth ?? parseScenarioDays(input.text))?.filter((days) => days > 0 && days <= 31);
   const days = input.daysPerMonth ?? parsed.daysPerMonth ?? 30;
   const powerW = input.powerW ?? parsed.powerW;
 
@@ -421,17 +461,31 @@ export function compareUsageScenarios(input: {
     };
   }
 
-  const scenarios = hours.map((hour) => {
-    const additionalMonthlyKwh = Number(((powerW / 1000) * hour * days).toFixed(3));
+  if (dayScenarios && dayScenarios.length > 0 && typeof parsed.hoursPerDay !== 'number' && !input.scenarioHoursPerDay?.length) {
+    return {
+      scenarios: [],
+      recommendations: ['사용일수별 비교에는 하루 사용시간이 필요합니다. 예: "1500W 제품을 하루 2시간씩 10일, 20일, 30일 비교해줘".']
+    };
+  }
+
+  const scenarioInputs =
+    dayScenarios && dayScenarios.length > 0
+      ? dayScenarios.map((scenarioDays) => ({ hour: parsed.hoursPerDay ?? hours[0] ?? 1, days: scenarioDays }))
+      : hours.map((hour) => ({ hour, days }));
+
+  const scenarios = scenarioInputs.map(({ hour, days: scenarioDays }) => {
+    const additionalMonthlyKwh = Number(((powerW / 1000) * hour * scenarioDays).toFixed(3));
     const item: {
       label: string;
       hoursPerDay: number;
+      daysPerMonth: number;
       additionalMonthlyKwh: number;
       estimatedIncreaseWon?: number;
       assumedAfterMonthlyKwh?: number;
     } = {
-      label: `${hour}시간/일 * ${days}일`,
+      label: `${hour}시간/일 * ${scenarioDays}일`,
       hoursPerDay: hour,
+      daysPerMonth: scenarioDays,
       additionalMonthlyKwh
     };
     if (typeof parsed.baseMonthlyKwh === 'number') {
