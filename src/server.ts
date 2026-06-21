@@ -5,12 +5,15 @@ import type { Request, Response } from 'express';
 import * as z from 'zod/v4';
 import { compareUsageScenarios, estimateBill, parseUsageRequest } from './billCalculator.js';
 import {
+  classifyCivilServiceCatalog,
   getKepcoIntegrationStatus,
   guideCivilService,
   inferCivilServiceType,
+  listKepcoCivilServiceCatalog,
   prepareApplicationDraft
 } from './civilService.js';
-import { SERVICE_NAME, SERVICE_NAME_KO, SERVICE_VERSION, type CivilServiceType } from './kepcoData.js';
+import { planEvChargingVisit } from './evCharging.js';
+import { OFFICIAL_DATA_SOURCES, SERVICE_NAME, SERVICE_NAME_KO, SERVICE_VERSION, type CivilServiceType } from './kepcoData.js';
 
 function jsonText(data: unknown): { content: Array<{ type: 'text'; text: string }> } {
   return {
@@ -35,8 +38,33 @@ const civilServiceSchema = z.enum([
   'outage_or_danger_report',
   'customer_number_lookup',
   'bill_lookup_or_payment',
+  'ev_charger_usage_submission',
+  'certificate_or_tax',
+  'metering_or_due_date',
+  'ppa_or_offset',
+  'other',
   'unknown'
 ]);
+
+const chargerStatusSchema = z.enum(['available', 'charging', 'reserved', 'faulted', 'unknown']);
+const chargerCandidateSchema = z.object({
+  name: z.string().min(1).max(120),
+  address: z.string().min(1).max(200).optional(),
+  routeName: z.string().min(1).max(80).optional(),
+  direction: z.string().min(1).max(80).optional(),
+  operator: z.string().min(1).max(120).optional(),
+  chargerType: z.string().min(1).max(80).optional(),
+  connectorType: z.string().min(1).max(80).optional(),
+  outputKw: z.number().positive().max(1000).optional(),
+  distanceKm: z.number().min(0).max(1000).optional(),
+  status: chargerStatusSchema.optional(),
+  availableCount: z.number().int().min(0).max(1000).optional(),
+  chargingCount: z.number().int().min(0).max(1000).optional(),
+  faultedCount: z.number().int().min(0).max(1000).optional(),
+  totalCount: z.number().int().min(0).max(1000).optional(),
+  statusUpdatedAt: z.string().min(1).max(80).optional(),
+  estimatedArrivalMinutes: z.number().min(0).max(1440).optional()
+});
 
 function optionalEnvNumber(name: string): number | undefined {
   const raw = process.env[name];
@@ -164,6 +192,45 @@ function createServer(): McpServer {
   );
 
   server.registerTool(
+    'classify_kepco_civil_service_63',
+    {
+      title: 'Classify KEPCO Civil Service From 63 Items',
+      description:
+        'Use when the user describes a KEPCO/한전ON civil-service task. Matches the request against the official 한전ON 민원신청 63-item catalog and returns ranked candidates, whether the action is available now, needs user auth/API, or needs partner agreement.',
+      inputSchema: {
+        text: z.string().min(2).max(2000).describe('Korean natural-language KEPCO civil-service request.'),
+        limit: z.number().int().min(1).max(10).optional().describe('Maximum candidate count. Defaults to 5.')
+      },
+      annotations: {
+        title: 'Classify KEPCO Civil Service From 63 Items',
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: false,
+        idempotentHint: true
+      }
+    },
+    async ({ text, limit }) => jsonText(classifyCivilServiceCatalog(text, limit))
+  );
+
+  server.registerTool(
+    'list_kepco_civil_service_catalog',
+    {
+      title: 'List KEPCO Civil Service Catalog',
+      description:
+        'Returns the official 한전ON 민원신청 63-item catalog captured for this MVP, including category, service type, integration boundary, expected inputs, likely documents, and MCP action.',
+      inputSchema: {},
+      annotations: {
+        title: 'List KEPCO Civil Service Catalog',
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: false,
+        idempotentHint: true
+      }
+    },
+    async () => jsonText(listKepcoCivilServiceCatalog())
+  );
+
+  server.registerTool(
     'guide_kepco_civil_service',
     {
       title: 'Guide KEPCO Civil Service',
@@ -233,6 +300,53 @@ function createServer(): McpServer {
       }
     },
     async () => jsonText(getKepcoIntegrationStatus())
+  );
+
+  server.registerTool(
+    'plan_ev_charging_visit',
+    {
+      title: 'Plan EV Charging Visit',
+      description:
+        'Use for EV charging route/visit planning such as "30분 뒤 덕평휴게소 근처에서 40kWh 충전하고 싶어". Builds plan A/B using current charger candidates, arrival time, connector/output needs, and clearly separates MVP visit planning from real reservation confirmation.',
+      inputSchema: {
+        text: z.string().min(2).max(2000).optional().describe('Natural-language EV charging request.'),
+        origin: z.string().min(1).max(120).optional().describe('Optional origin.'),
+        destination: z.string().min(1).max(120).optional().describe('Optional destination.'),
+        routeName: z.string().min(1).max(80).optional().describe('Highway or route name, e.g. 영동고속도로.'),
+        direction: z.string().min(1).max(80).optional().describe('Direction, e.g. 강릉방향.'),
+        arrivalInMinutes: z.number().min(0).max(1440).optional().describe('Estimated arrival time in minutes.'),
+        desiredKwh: z.number().positive().max(300).optional().describe('Desired charge amount in kWh.'),
+        connectorType: z.string().min(1).max(80).optional().describe('Connector type such as DC콤보.'),
+        minimumOutputKw: z.number().positive().max(1000).optional().describe('Minimum desired charger output.'),
+        candidates: z.array(chargerCandidateSchema).max(20).optional().describe('Optional charger status candidates from public API or user-provided data.')
+      },
+      annotations: {
+        title: 'Plan EV Charging Visit',
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: true,
+        idempotentHint: true
+      }
+    },
+    async (input) => jsonText(planEvChargingVisit(input))
+  );
+
+  server.registerTool(
+    'get_official_data_sources',
+    {
+      title: 'Get Official Data Sources',
+      description:
+        'Returns official source inventory used by this MVP: KEPCO ON tariff/calculator/civil-service pages, public data files, EV charger public API, highway rest-area charger data, and OCPP standard boundary.',
+      inputSchema: {},
+      annotations: {
+        title: 'Get Official Data Sources',
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: false,
+        idempotentHint: true
+      }
+    },
+    async () => jsonText(OFFICIAL_DATA_SOURCES)
   );
 
   return server;

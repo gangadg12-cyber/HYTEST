@@ -1,4 +1,12 @@
-import { CIVIL_SERVICE_GUIDES, OFFICIAL_LINKS, type CivilServiceType } from './kepcoData.js';
+import {
+  CIVIL_SERVICE_GUIDES,
+  CIVIL_SERVICE_ITEMS,
+  OFFICIAL_DATA_SOURCES,
+  OFFICIAL_LINKS,
+  type CivilServiceType,
+  type IntegrationBoundary,
+  type KepcoCivilServiceItem
+} from './kepcoData.js';
 
 export interface CivilServiceInput {
   text: string;
@@ -15,6 +23,8 @@ export interface CivilServiceGuideResult {
   serviceType: CivilServiceType;
   labelKo: string;
   confidence: 'high' | 'medium' | 'low';
+  matchedCivilServiceItems: CivilServiceMatch[];
+  boundary: IntegrationBoundary;
   canAutoSubmit: false;
   autoSubmitReason: string;
   description: string;
@@ -28,6 +38,18 @@ export interface CivilServiceGuideResult {
   officialLinks: typeof OFFICIAL_LINKS;
 }
 
+export interface CivilServiceMatch {
+  code: string;
+  labelKo: string;
+  category: string;
+  serviceType: CivilServiceType;
+  boundary: IntegrationBoundary;
+  score: number;
+  confidence: 'high' | 'medium' | 'low';
+  officialPath: string;
+  mcpAction: string;
+}
+
 function compact(text: string): string {
   return text.replace(/\s+/g, '').toLowerCase();
 }
@@ -37,7 +59,86 @@ function hasAny(text: string, keywords: string[]): boolean {
   return keywords.some((keyword) => text.includes(keyword) || loose.includes(compact(keyword)));
 }
 
+function confidenceFromScore(score: number): CivilServiceMatch['confidence'] {
+  if (score >= 9) {
+    return 'high';
+  }
+  if (score >= 4) {
+    return 'medium';
+  }
+  return 'low';
+}
+
+function tokenScore(text: string, item: KepcoCivilServiceItem): number {
+  const original = text.toLowerCase();
+  const loose = compact(text);
+  let score = 0;
+
+  if (original.includes(item.labelKo.toLowerCase()) || loose.includes(compact(item.labelKo))) {
+    score += 10;
+  }
+  if (original.includes(item.category.toLowerCase()) || loose.includes(compact(item.category))) {
+    score += 2;
+  }
+
+  for (const keyword of item.keywords) {
+    if (keyword && (original.includes(keyword.toLowerCase()) || loose.includes(compact(keyword)))) {
+      score += keyword === item.labelKo ? 4 : 3;
+    }
+  }
+
+  return score;
+}
+
+export function classifyCivilServiceCatalog(text: string, limit = 5): {
+  input: string;
+  catalogSize: number;
+  matches: CivilServiceMatch[];
+  fallback: { serviceType: CivilServiceType; confidence: CivilServiceGuideResult['confidence'] };
+  boundarySummary: Record<IntegrationBoundary, number>;
+} {
+  const matches = CIVIL_SERVICE_ITEMS.map((item) => {
+    const score = tokenScore(text, item);
+    return {
+      code: item.code,
+      labelKo: item.labelKo,
+      category: item.category,
+      serviceType: item.serviceType,
+      boundary: item.boundary,
+      score,
+      confidence: confidenceFromScore(score),
+      officialPath: item.officialPath,
+      mcpAction: item.mcpAction
+    };
+  })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || a.labelKo.localeCompare(b.labelKo, 'ko'))
+    .slice(0, limit);
+
+  return {
+    input: text,
+    catalogSize: CIVIL_SERVICE_ITEMS.length,
+    matches,
+    fallback: inferCivilServiceType(text),
+    boundarySummary: {
+      available_now: CIVIL_SERVICE_ITEMS.filter((item) => item.boundary === 'available_now').length,
+      needs_user_auth_or_api: CIVIL_SERVICE_ITEMS.filter((item) => item.boundary === 'needs_user_auth_or_api').length,
+      needs_partner_agreement: CIVIL_SERVICE_ITEMS.filter((item) => item.boundary === 'needs_partner_agreement').length
+    }
+  };
+}
+
 export function inferCivilServiceType(text: string): { serviceType: CivilServiceType; confidence: CivilServiceGuideResult['confidence'] } {
+  const catalogMatch = CIVIL_SERVICE_ITEMS.map((item) => ({ item, score: tokenScore(text, item) }))
+    .filter(({ score }) => score >= 7)
+    .sort((a, b) => b.score - a.score)[0];
+  if (catalogMatch) {
+    return {
+      serviceType: catalogMatch.item.serviceType,
+      confidence: confidenceFromScore(catalogMatch.score)
+    };
+  }
+
   if (hasAny(text, ['명의변경', '명의 변경', '계약자 변경', '사용자 변경', '이름 바꾸'])) {
     return { serviceType: 'name_change', confidence: 'high' };
   }
@@ -67,6 +168,18 @@ export function inferCivilServiceType(text: string): { serviceType: CivilService
   }
   if (hasAny(text, ['요금조회', '요금 조회', '납부', '미납', '청구금액', '전기요금 확인'])) {
     return { serviceType: 'bill_lookup_or_payment', confidence: 'medium' };
+  }
+  if (hasAny(text, ['세금계산서', '증명서', '진위확인'])) {
+    return { serviceType: 'certificate_or_tax', confidence: 'medium' };
+  }
+  if (hasAny(text, ['검침', '납기일', '계량기', '원격검침', 'AMI'])) {
+    return { serviceType: 'metering_or_due_date', confidence: 'medium' };
+  }
+  if (hasAny(text, ['PPA', '상계거래', '요금상계'])) {
+    return { serviceType: 'ppa_or_offset', confidence: 'medium' };
+  }
+  if (hasAny(text, ['전기차충전소 사용량', '충전소 사용량 제출'])) {
+    return { serviceType: 'ev_charger_usage_submission', confidence: 'high' };
   }
   return { serviceType: 'unknown', confidence: 'low' };
 }
@@ -107,26 +220,38 @@ function makeDraftText(serviceType: CivilServiceType, input: CivilServiceInput):
   ].join('\n');
 }
 
+function mergeUnique(primary: string[], secondary: string[]): string[] {
+  return Array.from(new Set([...primary, ...secondary]));
+}
+
 export function guideCivilService(input: CivilServiceInput): CivilServiceGuideResult {
+  const catalog = classifyCivilServiceCatalog(input.text);
+  const bestItem = catalog.matches[0];
   const inferred = input.serviceType ? { serviceType: input.serviceType, confidence: 'high' as const } : inferCivilServiceType(input.text);
   const guide = CIVIL_SERVICE_GUIDES[inferred.serviceType];
   const missingInputs = missingInputsFor(inferred.serviceType, input);
+  const boundary = bestItem?.boundary ?? (inferred.serviceType === 'outage_or_danger_report' ? 'available_now' : 'needs_user_auth_or_api');
+  const requiredInputs = bestItem ? mergeUnique(bestItem.requiredInputs, guide.requiredInputs) : guide.requiredInputs;
+  const likelyDocuments = bestItem ? mergeUnique(bestItem.likelyDocuments, guide.likelyDocuments) : guide.likelyDocuments;
 
   return {
     serviceType: inferred.serviceType,
     labelKo: guide.labelKo,
     confidence: inferred.confidence,
+    matchedCivilServiceItems: catalog.matches,
+    boundary,
     canAutoSubmit: false,
     autoSubmitReason:
       '한전ON 로그인, 본인확인, 개인정보/금융정보 입력 또는 내부 민원 API 권한이 필요하므로 이 MCP MVP는 실제 제출 대신 분류, 서류 안내, 신청서 초안 작성, 공식 메뉴 연결까지만 수행합니다.',
     description: guide.description,
-    kepcoOnPath: guide.kepcoOnPath,
+    kepcoOnPath: bestItem?.officialPath ?? guide.kepcoOnPath,
     directUrl: guide.directUrl,
-    requiredInputs: guide.requiredInputs,
-    likelyDocuments: guide.likelyDocuments,
+    requiredInputs,
+    likelyDocuments,
     missingInputs,
     nextSteps: [
       missingInputs.length > 0 ? `먼저 보완할 정보: ${missingInputs.join(', ')}` : '필수 입력값 초안은 대부분 채워졌습니다.',
+      bestItem ? `가장 가까운 한전ON 민원 항목: ${bestItem.category} > ${bestItem.labelKo}` : '민원 항목이 확실하지 않으면 한전ON 민원신청에서 다시 확인하세요.',
       '아래 신청/문의 초안을 확인한 뒤 한전ON 해당 메뉴에서 본인확인 후 제출하세요.',
       ...guide.notes
     ],
@@ -139,6 +264,8 @@ export function prepareApplicationDraft(input: CivilServiceInput): {
   serviceType: CivilServiceType;
   title: string;
   draftFields: Record<string, string>;
+  matchedCivilServiceItems: CivilServiceMatch[];
+  boundary: IntegrationBoundary;
   missingInputs: string[];
   confirmationChecklist: string[];
   draftRequestText: string;
@@ -153,6 +280,7 @@ export function prepareApplicationDraft(input: CivilServiceInput): {
     title: `${source.labelKo} 신청서 초안`,
     draftFields: {
       serviceType: source.labelKo,
+      officialPath: guide.kepcoOnPath,
       applicantName: input.applicantName ?? '미입력',
       phone: input.phone ?? '미입력',
       customerNumber: input.customerNumber ?? '미입력',
@@ -160,6 +288,8 @@ export function prepareApplicationDraft(input: CivilServiceInput): {
       preferredDate: input.preferredDate ?? '미입력',
       details: input.details ?? input.text
     },
+    matchedCivilServiceItems: guide.matchedCivilServiceItems,
+    boundary: guide.boundary,
     missingInputs: guide.missingInputs,
     confirmationChecklist: [
       '고객번호 또는 주소가 정확한지 확인',
@@ -176,24 +306,40 @@ export function prepareApplicationDraft(input: CivilServiceInput): {
 export function getKepcoIntegrationStatus(): {
   availableNow: string[];
   needsKepcoOrUserAuth: string[];
+  needsPartnerAgreement: string[];
   suggestedMvpFlow: string[];
+  dataSources: typeof OFFICIAL_DATA_SOURCES;
+  civilServiceCatalog: {
+    total: number;
+    availableNow: number;
+    needsUserAuthOrApi: number;
+    needsPartnerAgreement: number;
+  };
   officialLinks: typeof OFFICIAL_LINKS;
 } {
   return {
     availableNow: [
       '공식 요금표 기반 주택용 전기요금 간이 계산',
       '가전 소비전력/사용시간 기반 월 kWh 증가량 계산',
-      '자연어 민원 유형 분류',
+      '한전ON 민원신청 63건 기준 자연어 민원 유형 분류',
       '필요 정보/서류 체크리스트 생성',
       '한전ON 제출 전 신청/문의 문안 작성',
-      '한전ON 공식 메뉴 링크 연결'
+      '한전ON 공식 메뉴 링크 연결',
+      '전기차 충전소 공개 API 구조에 맞춘 도착시점 방문 플랜 생성'
     ],
     needsKepcoOrUserAuth: [
       '개인 고객번호 기반 실제 청구/납부 내역 조회',
       '자동이체 실제 등록/변경',
       '명의변경/전기사용신청 최종 제출',
       '요금 실제 납부',
-      '고객별 AMI 실시간 사용량 조회'
+      '고객별 AMI 실시간 사용량 조회',
+      '한전ON 민원 접수 결과 조회'
+    ],
+    needsPartnerAgreement: [
+      '충전사업자 관제 API를 통한 실제 충전소 예약 확정',
+      '예약자 외 충전 차단 또는 원격 인증',
+      '충전 결제 및 회원 연동',
+      '차량 제조사 배터리/도착예정시간 연동'
     ],
     suggestedMvpFlow: [
       '사용자 자연어 입력',
@@ -202,6 +348,25 @@ export function getKepcoIntegrationStatus(): {
       '인증 필요한 건 신청서 초안과 필요서류 체크리스트 생성',
       '한전ON 공식 메뉴로 handoff'
     ],
+    dataSources: OFFICIAL_DATA_SOURCES,
+    civilServiceCatalog: {
+      total: CIVIL_SERVICE_ITEMS.length,
+      availableNow: CIVIL_SERVICE_ITEMS.filter((item) => item.boundary === 'available_now').length,
+      needsUserAuthOrApi: CIVIL_SERVICE_ITEMS.filter((item) => item.boundary === 'needs_user_auth_or_api').length,
+      needsPartnerAgreement: CIVIL_SERVICE_ITEMS.filter((item) => item.boundary === 'needs_partner_agreement').length
+    },
     officialLinks: OFFICIAL_LINKS
+  };
+}
+
+export function listKepcoCivilServiceCatalog(): {
+  total: number;
+  categories: string[];
+  items: KepcoCivilServiceItem[];
+} {
+  return {
+    total: CIVIL_SERVICE_ITEMS.length,
+    categories: Array.from(new Set(CIVIL_SERVICE_ITEMS.map((item) => item.category))),
+    items: CIVIL_SERVICE_ITEMS
   };
 }

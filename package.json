@@ -1,11 +1,12 @@
 {
   "name": "kepco-electric-agent-mcp-server",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "KEPCO electricity bill simulation and civil-service preparation MCP server for PlayMCP in KC deployment.",
+  "description": "KEPCO electricity bill simulation, civil-service preparation, and EV charging visit planning MCP server for PlayMCP in KC deployment.",
   "scripts": {
     "dev": "tsx src/server.ts",
+    "test": "tsx src/smokeTest.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js"
   },

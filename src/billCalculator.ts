@@ -289,7 +289,7 @@ export function calculateResidentialBill(input: {
     electricityChargeBeforeTaxWon,
     vatWon,
     powerIndustryFundWon,
-    estimatedTotalWon: electricityChargeBeforeTaxWon + vatWon + powerIndustryFundWon,
+    estimatedTotalWon: floorToTen(electricityChargeBeforeTaxWon + vatWon + powerIndustryFundWon),
     blockDetails: charge.blockDetails
   };
 }
