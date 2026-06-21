@@ -47,6 +47,8 @@ export interface CivilServiceMatch {
   score: number;
   confidence: 'high' | 'medium' | 'low';
   officialPath: string;
+  requiredInputs: string[];
+  likelyDocuments: string[];
   mcpAction: string;
 }
 
@@ -108,6 +110,8 @@ export function classifyCivilServiceCatalog(text: string, limit = 5): {
       score,
       confidence: confidenceFromScore(score),
       officialPath: item.officialPath,
+      requiredInputs: item.requiredInputs,
+      likelyDocuments: item.likelyDocuments,
       mcpAction: item.mcpAction
     };
   })

@@ -131,7 +131,7 @@ export function parseUsageRequest(input: BillEstimateInput): ParsedUsageRequest 
   let applianceName = input.applianceName ?? appliance.applianceName;
 
   let powerW = input.powerW;
-  const kw = parseNumberNear(normalized, [/(\d+(?:\.\d+)?)\s*(?:kw|kW|킬로와트)/i]);
+  const kw = parseNumberNear(normalized, [/(\d+(?:\.\d+)?)\s*(?:kw(?!h)|킬로와트(?!시))/i]);
   const watt = parseNumberNear(normalized, [/(\d+(?:\.\d+)?)\s*(?:w|W|와트)/]);
   if (typeof powerW !== 'number') {
     if (typeof kw === 'number') {
