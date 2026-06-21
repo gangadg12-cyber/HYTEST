@@ -12,7 +12,7 @@ import {
   listKepcoCivilServiceCatalog,
   prepareApplicationDraft
 } from './civilService.js';
-import { planEvChargingVisit } from './evCharging.js';
+import { planEvChargingVisitWithLiveData } from './evCharging.js';
 import { getOfficialDataSourcesResult, SERVICE_NAME, SERVICE_NAME_KO, SERVICE_VERSION, type CivilServiceType } from './kepcoData.js';
 
 function jsonText(data: unknown): { content: Array<{ type: 'text'; text: string }> } {
@@ -317,11 +317,18 @@ function createServer(): McpServer {
     {
       title: 'Plan EV Charging Visit',
       description:
-        'Use for EV charging route/visit planning such as "30분 뒤 덕평휴게소 근처에서 40kWh 충전하고 싶어" or "차데모 충전소만 찾아줘". Builds plan A/B using public EV charger API candidates or user-provided charger candidates, arrival time, exact connector/output needs, and clearly separates status-based visit planning from real reservation confirmation.',
+        'Use for EV charging route/visit planning such as "서울 강남구 근처 충전소 찾아줘", "위도/경도 주변 DC콤보 찾아줘", "30분 뒤 덕평휴게소 근처에서 40kWh 충전하고 싶어", or "차데모 충전소만 찾아줘". When locationText/zcode/coordinates are provided and EV_CHARGER_SERVICE_KEY is configured, it calls the public KECO EV charger API for real charger location/status candidates, then builds plan A/B. It clearly separates status-based visit planning from real reservation confirmation.',
       inputSchema: {
         text: z.string().min(2).max(2000).optional().describe('Natural-language EV charging request.'),
         origin: z.string().min(1).max(120).optional().describe('Optional origin.'),
         destination: z.string().min(1).max(120).optional().describe('Optional destination.'),
+        locationText: z.string().min(1).max(160).optional().describe('User location or target area such as 서울 강남구, 경기 이천 덕평휴게소, 제주공항. Used to infer zcode and filter API results.'),
+        latitude: z.number().min(33).max(39).optional().describe('Optional current or target latitude in Korea. Used for distance filtering when provided with longitude.'),
+        longitude: z.number().min(124).max(132).optional().describe('Optional current or target longitude in Korea. Used for distance filtering when provided with latitude.'),
+        radiusKm: z.number().positive().max(100).optional().describe('Optional search radius in km when latitude/longitude are provided. Defaults to 15.'),
+        zcode: z.string().min(2).max(2).optional().describe('Optional Korean province/city code first two digits, e.g. 11 Seoul, 41 Gyeonggi.'),
+        useLiveApi: z.boolean().optional().describe('Set false to skip public EV charger API lookup and use provided/demo candidates only. Defaults to true when location is available.'),
+        apiNumOfRows: z.number().int().min(10).max(9999).optional().describe('Optional public API row count. Defaults to 9999.'),
         routeName: z.string().min(1).max(80).optional().describe('Highway or route name, e.g. 영동고속도로.'),
         direction: z.string().min(1).max(80).optional().describe('Direction, e.g. 강릉방향.'),
         arrivalInMinutes: z.number().min(0).max(1440).optional().describe('Estimated arrival time in minutes.'),
@@ -343,7 +350,7 @@ function createServer(): McpServer {
         idempotentHint: true
       }
     },
-    async (input) => jsonText(planEvChargingVisit(input))
+    async (input) => jsonText(await planEvChargingVisitWithLiveData(input))
   );
 
   server.registerTool(

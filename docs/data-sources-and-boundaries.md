@@ -9,7 +9,7 @@
 | Civil-service routing | KEPCO ON 민원신청 63-item catalog | Natural-language request to ranked civil-service candidates |
 | Civil-service draft | KEPCO ON menu structure and FAQ public data | Required fields, likely documents, missing inputs, draft request text |
 | Civil-service forms | KEPCO ON 서식자료실 and major 민원 pages | Official form URL, input-field guidance, and Markdown/text draft |
-| EV charging visit plan | Korea Environment Corporation charger API structure and Korea Expressway rest-area charger data | Plan A/B based on current or provided candidate status and arrival time |
+| EV charging visit plan | Korea Environment Corporation charger API and Korea Expressway rest-area charger data | With `EV_CHARGER_SERVICE_KEY`, query public API candidates by user location/zcode and build Plan A/B based on status, distance, connector, output, and arrival time |
 
 ## Needs User Auth Or KEPCO API
 
@@ -57,4 +57,5 @@ The MVP therefore implements "reservation-style visit planning" rather than "con
 - Tariff data should be refreshed when KEPCO changes rates, climate/environment charge, or fuel adjustment charge.
 - KEPCO ON civil-service catalog should be checked before final submission because menu names can change.
 - EV charger status can use the public EV charger API or user-provided candidate data. Demo candidates are only for PlayMCP behavior testing when no live API response is supplied.
+- The public EV charger API requires a data.go.kr service key in `EV_CHARGER_SERVICE_KEY` or `DATA_GO_KR_SERVICE_KEY`.
 - EV connector matching must be exact. A CHAdeMO request must not recommend a DC Combo charger as Plan A or Plan B.

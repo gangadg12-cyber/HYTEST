@@ -7,7 +7,7 @@ import {
   listKepcoCivilServiceCatalog,
   prepareApplicationDraft
 } from './civilService.js';
-import { planEvChargingVisit } from './evCharging.js';
+import { inferEvZcode, mapKecoChargerInfoItemToCandidate, planEvChargingVisit, planEvChargingVisitWithLiveData } from './evCharging.js';
 import { getOfficialDataSourcesResult } from './kepcoData.js';
 
 const bill = calculateResidentialBill({
@@ -118,6 +118,46 @@ assert.ok(evPlan.planA);
 assert.equal(evPlan.reservationBoundary.integrationBoundary, 'needs_partner_agreement');
 assert.ok(evPlan.officialDataSources.some((source) => source.id === 'keco_ev_charger_api'));
 assert.ok(!evPlan.officialDataSources.some((source) => source.id === 'ocpp_standard'));
+
+assert.equal(inferEvZcode('서울 강남구'), '11');
+const liveCandidate = mapKecoChargerInfoItemToCandidate(
+  {
+    statNm: '강남 테스트 충전소',
+    addr: '서울특별시 강남구 테헤란로 1',
+    lat: '37.4979',
+    lng: '127.0276',
+    chgerType: '04',
+    output: '100',
+    stat: '2',
+    statUpdDt: '20260621101010',
+    busiNm: '테스트운영사'
+  },
+  { latitude: 37.5, longitude: 127.03 }
+);
+assert.equal(liveCandidate?.connectorType, 'DC콤보');
+assert.equal(liveCandidate?.status, 'available');
+assert.ok(typeof liveCandidate?.distanceKm === 'number');
+
+const originalEvKey = process.env.EV_CHARGER_SERVICE_KEY;
+const originalDataGoKrKey = process.env.DATA_GO_KR_SERVICE_KEY;
+delete process.env.EV_CHARGER_SERVICE_KEY;
+delete process.env.DATA_GO_KR_SERVICE_KEY;
+const liveFallback = await planEvChargingVisitWithLiveData({
+  locationText: '서울 강남구',
+  connectorType: 'DC콤보'
+});
+assert.equal(liveFallback.liveApi?.attempted, true);
+assert.equal(liveFallback.liveApi?.serviceKeyConfigured, false);
+if (originalEvKey === undefined) {
+  delete process.env.EV_CHARGER_SERVICE_KEY;
+} else {
+  process.env.EV_CHARGER_SERVICE_KEY = originalEvKey;
+}
+if (originalDataGoKrKey === undefined) {
+  delete process.env.DATA_GO_KR_SERVICE_KEY;
+} else {
+  process.env.DATA_GO_KR_SERVICE_KEY = originalDataGoKrKey;
+}
 
 const chademoPlan = planEvChargingVisit({
   text: '30분 뒤 영동고속도로 강릉방향에서 차데모 충전소만 찾아줘'

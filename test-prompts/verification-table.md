@@ -12,7 +12,7 @@
 | 8 | Application fill-out | `prepare_kepco_application_draft` | `answerSummary`, draft fields, missing inputs, no real submission claim |
 | 9 | Auto-transfer | `guide_kepco_civil_service` | explains authenticated final action required |
 | 10 | Dangerous facility report | `guide_kepco_civil_service` | 123/119 priority language |
-| 11 | EV charging visit plan | `plan_ev_charging_visit` | plan A/B, arrival-time reasoning, reservation boundary |
+| 11 | EV charging visit plan | `plan_ev_charging_visit` | With `EV_CHARGER_SERVICE_KEY`, location/zcode/coordinates trigger public API lookup; otherwise `liveApi` explains fallback |
 | 12 | EV connector exact match | `plan_ev_charging_visit` | CHAdeMO request must not recommend DC Combo as Plan A/B |
 | 13 | MVP capability | `get_kepco_mcp_integration_status` | available vs needs-auth vs needs-partner list, including demo/provided-candidate EV boundary |
 | 14 | Official data inventory | `get_official_data_sources` | Markdown summary with KEPCO ON, form pages, public data, and EV charger API URLs; OCPP link is not shown |
@@ -27,6 +27,7 @@
 한전ON 민원신청 63건 중 증설 관련 항목만 상세로 보여줘.
 원격검침 AMI 신청서 초안 만들어줘.
 30분 뒤 영동고속도로 강릉방향에서 40kWh 충전하고 싶어. 플랜A/B 추천해줘.
+서울 강남구 근처에서 지금 사용 가능한 DC콤보 충전소를 찾아서 방문 플랜 짜줘.
 영동고속도로 강릉방향에서 차데모 충전소만 찾아줘. DC콤보는 빼줘.
 이 MCP가 실제 납부나 충전소 예약 확정까지 가능한지 기능 경계를 알려줘.
 ```

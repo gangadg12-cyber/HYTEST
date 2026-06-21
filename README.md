@@ -51,7 +51,7 @@ Available now:
 - Natural-language classification against 63 한전ON civil-service items.
 - Required-input, likely-document, and missing-field checklist.
 - KEPCO/한전ON draft request text and official path handoff.
-- EV charging visit plan A/B using public EV charger API style candidates, supplied charger candidates, or demo candidates.
+- EV charging visit plan A/B using the public EV charger API when `EV_CHARGER_SERVICE_KEY` is configured, supplied charger candidates, or demo candidates.
 
 Needs KEPCO login, user auth, or official API:
 
@@ -89,6 +89,14 @@ Health check:
 ```text
 http://localhost:3000/healthz
 ```
+
+## Environment Variables
+
+```text
+EV_CHARGER_SERVICE_KEY=encoded-data-go-kr-service-key
+```
+
+When this key is set, `plan_ev_charging_visit` can call the public KECO EV charger API using a user-provided `locationText`, `zcode`, or coordinates and then rank real charger candidates by distance, status, output, and connector match. Without the key, the tool returns a `liveApi` message and falls back to provided/demo candidates.
 
 ## Docker
 

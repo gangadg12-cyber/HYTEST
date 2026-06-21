@@ -1,6 +1,6 @@
 export const SERVICE_NAME = 'kepco-electric-agent-mcp';
 export const SERVICE_NAME_KO = '한전 전기생활 도우미';
-export const SERVICE_VERSION = '0.3.2';
+export const SERVICE_VERSION = '0.3.3';
 
 export type VoltageType = 'low_voltage' | 'high_voltage';
 export type Season = 'summer' | 'other';
