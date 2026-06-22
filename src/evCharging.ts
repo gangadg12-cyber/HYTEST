@@ -161,6 +161,8 @@ const DEMO_HIGHWAY_CHARGERS: ChargerCandidateInput[] = [
 ];
 
 const KECO_EV_CHARGER_INFO_ENDPOINT = 'https://apis.data.go.kr/B552584/EvCharger/getChargerInfo';
+const CONTEST_FALLBACK_EV_CHARGER_SERVICE_KEY =
+  '904eb0cc7c3d3fddba7f2827cbe23a019955e96e25cfca1b57b0efd39d1b1247';
 
 const ZCODE_ALIASES: Array<{ zcode: string; aliases: string[] }> = [
   { zcode: '11', aliases: ['서울', '서울특별시'] },
@@ -536,6 +538,14 @@ function buildKecoUrl(input: EvChargingPlanInput, serviceKey: string, zcode?: st
   return `${KECO_EV_CHARGER_INFO_ENDPOINT}?ServiceKey=${serviceKey}&${params.toString()}`;
 }
 
+function getEvChargerServiceKey(): string | undefined {
+  return process.env.EV_CHARGER_SERVICE_KEY || process.env.DATA_GO_KR_SERVICE_KEY || CONTEST_FALLBACK_EV_CHARGER_SERVICE_KEY;
+}
+
+function hasEvChargerServiceKey(): boolean {
+  return Boolean(getEvChargerServiceKey());
+}
+
 function ensureArray<T>(value: T | T[] | undefined): T[] {
   if (!value) {
     return [];
@@ -568,7 +578,7 @@ async function fetchKecoEvChargerCandidates(input: EvChargingPlanInput): Promise
   fetchedCount: number;
   message: string;
 }> {
-  const serviceKey = process.env.EV_CHARGER_SERVICE_KEY || process.env.DATA_GO_KR_SERVICE_KEY;
+  const serviceKey = getEvChargerServiceKey();
   const locationText = extractLocationText(input);
   const zcode = input.zcode ?? inferEvZcode(locationText);
   if (!serviceKey) {
@@ -588,8 +598,20 @@ async function fetchKecoEvChargerCandidates(input: EvChargingPlanInput): Promise
   }
 
   const endpoint = buildKecoUrl(input, serviceKey, zcode);
-  const response = await fetch(endpoint);
-  const xml = await response.text();
+  let response: Response;
+  let xml: string;
+  try {
+    response = await fetch(endpoint);
+    xml = await response.text();
+  } catch (error) {
+    return {
+      candidates: [],
+      endpoint: KECO_EV_CHARGER_INFO_ENDPOINT,
+      zcode,
+      fetchedCount: 0,
+      message: `공공데이터포털 충전소 API 네트워크 오류: ${error instanceof Error ? error.message : String(error)}`
+    };
+  }
   if (!response.ok) {
     return {
       candidates: [],
@@ -602,7 +624,18 @@ async function fetchKecoEvChargerCandidates(input: EvChargingPlanInput): Promise
 
   const parsed = new XMLParser({ ignoreAttributes: false, parseTagValue: false }).parse(xml) as {
     response?: { body?: { items?: { item?: Record<string, unknown> | Array<Record<string, unknown>> }; totalCount?: string | number }; header?: { resultCode?: string; resultMsg?: string } };
+    OpenAPI_ServiceResponse?: { cmmMsgHeader?: { errMsg?: string; returnAuthMsg?: string; returnReasonCode?: string } };
   };
+  const authError = parsed.OpenAPI_ServiceResponse?.cmmMsgHeader;
+  if (authError) {
+    return {
+      candidates: [],
+      endpoint: KECO_EV_CHARGER_INFO_ENDPOINT,
+      zcode,
+      fetchedCount: 0,
+      message: `공공데이터포털 충전소 API 인증/호출 오류: ${authError.returnAuthMsg ?? authError.errMsg ?? authError.returnReasonCode ?? 'unknown'}`
+    };
+  }
   const resultCode = parsed.response?.header?.resultCode;
   if (resultCode && resultCode !== '00') {
     return {
@@ -719,7 +752,7 @@ export async function planEvChargingVisitWithLiveData(input: EvChargingPlanInput
     return planEvChargingVisit(input);
   }
 
-  const serviceKeyConfigured = Boolean(process.env.EV_CHARGER_SERVICE_KEY || process.env.DATA_GO_KR_SERVICE_KEY);
+  const serviceKeyConfigured = hasEvChargerServiceKey();
   const live = await fetchKecoEvChargerCandidates(input);
   if (live.candidates.length > 0) {
     return buildEvChargingPlan(input, live.candidates, 'live_public_api', {

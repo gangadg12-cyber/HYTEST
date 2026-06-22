@@ -147,7 +147,7 @@ const liveFallback = await planEvChargingVisitWithLiveData({
   connectorType: 'DC콤보'
 });
 assert.equal(liveFallback.liveApi?.attempted, true);
-assert.equal(liveFallback.liveApi?.serviceKeyConfigured, false);
+assert.equal(liveFallback.liveApi?.serviceKeyConfigured, true);
 if (originalEvKey === undefined) {
   delete process.env.EV_CHARGER_SERVICE_KEY;
 } else {

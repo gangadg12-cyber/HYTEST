@@ -96,7 +96,7 @@ http://localhost:3000/healthz
 EV_CHARGER_SERVICE_KEY=encoded-data-go-kr-service-key
 ```
 
-When this key is set, `plan_ev_charging_visit` can call the public KECO EV charger API using a user-provided `locationText`, `zcode`, or coordinates and then rank real charger candidates by distance, status, output, and connector match. Without the key, the tool returns a `liveApi` message and falls back to provided/demo candidates.
+When this key is set, `plan_ev_charging_visit` can call the public KECO EV charger API using a user-provided `locationText`, `zcode`, or coordinates and then rank real charger candidates by distance, status, output, and connector match. This contest branch also contains a temporary fallback key because PlayMCP in KC does not expose a runtime environment-variable field in the current UI; remove it and use an environment variable before regular operation.
 
 ## Docker
 
