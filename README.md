@@ -51,7 +51,7 @@ Available now:
 - Natural-language classification against 63 한전ON civil-service items.
 - Required-input, likely-document, and missing-field checklist.
 - KEPCO/한전ON draft request text and official path handoff.
-- EV charging visit plan A/B using the public EV charger API when `EV_CHARGER_SERVICE_KEY` is configured, supplied charger candidates, or demo candidates.
+- EV charging visit plan A/B using the public EV charger API when `EV_CHARGER_SERVICE_KEY` is configured or supplied charger candidates.
 
 Needs KEPCO login, user auth, or official API:
 
@@ -96,7 +96,7 @@ http://localhost:3000/healthz
 EV_CHARGER_SERVICE_KEY=encoded-data-go-kr-service-key
 ```
 
-When this key is set, `plan_ev_charging_visit` can call the public KECO EV charger API using a user-provided `locationText`, `zcode`, or coordinates and then rank real charger candidates by distance, status, output, and connector match. This contest branch also contains a temporary fallback key because PlayMCP in KC does not expose a runtime environment-variable field in the current UI; remove it and use an environment variable before regular operation.
+When this key is set, `plan_ev_charging_visit` can call the public KECO EV charger API using a user-provided `locationText`, `zcode`, `zscode`, or coordinates and then rank real charger candidates by distance, status, output, and connector match. The tool uses small paged requests to avoid public API timeouts and returns an explicit unavailable result when the API fails or returns no matching candidates. This contest branch also contains a temporary embedded key because PlayMCP in KC does not expose a runtime environment-variable field in the current UI; remove it and use an environment variable before regular operation.
 
 ## Docker
 

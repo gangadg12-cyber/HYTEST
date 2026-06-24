@@ -7,7 +7,7 @@ import {
   listKepcoCivilServiceCatalog,
   prepareApplicationDraft
 } from './civilService.js';
-import { inferEvZcode, mapKecoChargerInfoItemToCandidate, planEvChargingVisit, planEvChargingVisitWithLiveData } from './evCharging.js';
+import { inferEvZcode, inferEvZscode, mapKecoChargerInfoItemToCandidate, planEvChargingVisit, planEvChargingVisitWithLiveData } from './evCharging.js';
 import { getOfficialDataSourcesResult } from './kepcoData.js';
 
 const bill = calculateResidentialBill({
@@ -110,16 +110,32 @@ assert.ok(draft.missingInputs.includes('신청자 성명'));
 assert.ok(draft.answerSummary.includes('최종 신청'));
 
 const evPlan = planEvChargingVisit({
-  text: '30분 뒤 영동고속도로 강릉방향에서 40kWh 충전하고 싶어'
+  text: '30분 뒤 영동고속도로 강릉방향에서 40kWh 충전하고 싶어',
+  candidates: [
+    {
+      name: '테스트 휴게소 전기차 충전소',
+      address: '영동고속도로 테스트휴게소',
+      routeName: '영동고속도로',
+      direction: '강릉방향',
+      connectorType: 'DC콤보',
+      outputKw: 100,
+      status: 'available',
+      availableCount: 2,
+      totalCount: 3,
+      statusUpdatedAt: '20260624090000'
+    }
+  ]
 });
 assert.equal(evPlan.parsed.arrivalInMinutes, 30);
 assert.equal(evPlan.parsed.desiredKwh, 40);
 assert.ok(evPlan.planA);
+assert.equal(evPlan.dataMode, 'provided_candidates');
 assert.equal(evPlan.reservationBoundary.integrationBoundary, 'needs_partner_agreement');
 assert.ok(evPlan.officialDataSources.some((source) => source.id === 'keco_ev_charger_api'));
 assert.ok(!evPlan.officialDataSources.some((source) => source.id === 'ocpp_standard'));
 
 assert.equal(inferEvZcode('서울 강남구'), '11');
+assert.deepEqual(inferEvZscode('서울 강남구'), { zcode: '11', zscode: '11680' });
 const liveCandidate = mapKecoChargerInfoItemToCandidate(
   {
     statNm: '강남 테스트 충전소',
@@ -142,12 +158,15 @@ const originalEvKey = process.env.EV_CHARGER_SERVICE_KEY;
 const originalDataGoKrKey = process.env.DATA_GO_KR_SERVICE_KEY;
 delete process.env.EV_CHARGER_SERVICE_KEY;
 delete process.env.DATA_GO_KR_SERVICE_KEY;
-const liveFallback = await planEvChargingVisitWithLiveData({
+const liveDisabled = await planEvChargingVisitWithLiveData({
   locationText: '서울 강남구',
-  connectorType: 'DC콤보'
+  connectorType: 'DC콤보',
+  useLiveApi: false
 });
-assert.equal(liveFallback.liveApi?.attempted, true);
-assert.equal(liveFallback.liveApi?.serviceKeyConfigured, true);
+assert.equal(liveDisabled.dataMode, 'unavailable');
+assert.equal(liveDisabled.candidates.length, 0);
+assert.equal(liveDisabled.planA, undefined);
+assert.ok(liveDisabled.visitPlanText.includes('임의 충전소를 추천하지 않습니다'));
 if (originalEvKey === undefined) {
   delete process.env.EV_CHARGER_SERVICE_KEY;
 } else {
@@ -160,7 +179,18 @@ if (originalDataGoKrKey === undefined) {
 }
 
 const chademoPlan = planEvChargingVisit({
-  text: '30분 뒤 영동고속도로 강릉방향에서 차데모 충전소만 찾아줘'
+  text: '30분 뒤 영동고속도로 강릉방향에서 차데모 충전소만 찾아줘',
+  candidates: [
+    {
+      name: 'DC콤보 전용 테스트 충전소',
+      connectorType: 'DC콤보',
+      outputKw: 100,
+      status: 'available',
+      availableCount: 1,
+      totalCount: 1,
+      statusUpdatedAt: '20260624090000'
+    }
+  ]
 });
 assert.equal(chademoPlan.parsed.connectorType, 'CHAdeMO');
 assert.equal(chademoPlan.planA, undefined);

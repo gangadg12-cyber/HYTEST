@@ -249,8 +249,8 @@ function createServer(): McpServer {
       inputSchema: {
         text: z.string().min(2).max(2000).describe('User request, e.g. "이사정산 하고 싶어", "명의변경 신청서 써줘", "자동이체 바꾸고 싶어".'),
         serviceType: civilServiceSchema.optional().describe('Optional known service type.'),
-        customerNumber: z.string().min(2).max(80).optional().describe('Optional KEPCO customer number. Avoid entering private data in public demos.'),
-        address: z.string().min(2).max(200).optional().describe('Optional usage-place address. Avoid entering private data in public demos.'),
+        customerNumber: z.string().min(2).max(80).optional().describe('Optional KEPCO customer number. Avoid entering private data in public tests.'),
+        address: z.string().min(2).max(200).optional().describe('Optional usage-place address. Avoid entering private data in public tests.'),
         applicantName: z.string().min(1).max(80).optional().describe('Optional applicant name.'),
         phone: z.string().min(5).max(40).optional().describe('Optional phone number.'),
         preferredDate: z.string().min(2).max(80).optional().describe('Optional desired processing date or move date.'),
@@ -317,7 +317,7 @@ function createServer(): McpServer {
     {
       title: 'Plan EV Charging Visit',
       description:
-        'Use for EV charging route/visit planning such as "서울 강남구 근처 충전소 찾아줘", "위도/경도 주변 DC콤보 찾아줘", "30분 뒤 덕평휴게소 근처에서 40kWh 충전하고 싶어", or "차데모 충전소만 찾아줘". When locationText/zcode/coordinates are provided and EV_CHARGER_SERVICE_KEY is configured, it calls the public KECO EV charger API for real charger location/status candidates, then builds plan A/B. It clearly separates status-based visit planning from real reservation confirmation.',
+        'Use for EV charging route/visit planning such as "서울 강남구 근처 충전소 찾아줘", "위도/경도 주변 DC콤보 찾아줘", "30분 뒤 덕평휴게소 근처에서 40kWh 충전하고 싶어", or "차데모 충전소만 찾아줘". When locationText/zcode/zscode/coordinates are provided and EV_CHARGER_SERVICE_KEY is configured, it calls the public KECO EV charger API for real charger location/status candidates, then builds plan A/B. If the public API fails or returns no matching candidates, report that failure instead of inventing replacement chargers. It clearly separates status-based visit planning from real reservation confirmation.',
       inputSchema: {
         text: z.string().min(2).max(2000).optional().describe('Natural-language EV charging request.'),
         origin: z.string().min(1).max(120).optional().describe('Optional origin.'),
@@ -327,8 +327,9 @@ function createServer(): McpServer {
         longitude: z.number().min(124).max(132).optional().describe('Optional current or target longitude in Korea. Used for distance filtering when provided with latitude.'),
         radiusKm: z.number().positive().max(100).optional().describe('Optional search radius in km when latitude/longitude are provided. Defaults to 15.'),
         zcode: z.string().min(2).max(2).optional().describe('Optional Korean province/city code first two digits, e.g. 11 Seoul, 41 Gyeonggi.'),
-        useLiveApi: z.boolean().optional().describe('Set false to skip public EV charger API lookup and use provided/demo candidates only. Defaults to true when location is available.'),
-        apiNumOfRows: z.number().int().min(10).max(9999).optional().describe('Optional public API row count. Defaults to 9999.'),
+        zscode: z.string().min(5).max(5).optional().describe('Optional Korean city/district code, e.g. 11680 for Seoul Gangnam-gu.'),
+        useLiveApi: z.boolean().optional().describe('Set false to skip public EV charger API lookup. Without provided candidates, no recommendation is returned. Defaults to true when location is available.'),
+        apiNumOfRows: z.number().int().min(10).max(100).optional().describe('Optional public API row count. Defaults to 20 and is capped at 100 to avoid public API timeouts.'),
         routeName: z.string().min(1).max(80).optional().describe('Highway or route name, e.g. 영동고속도로.'),
         direction: z.string().min(1).max(80).optional().describe('Direction, e.g. 강릉방향.'),
         arrivalInMinutes: z.number().min(0).max(1440).optional().describe('Estimated arrival time in minutes.'),
