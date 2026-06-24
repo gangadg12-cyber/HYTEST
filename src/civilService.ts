@@ -105,7 +105,7 @@ export function classifyCivilServiceCatalog(text: string, limit = 5): {
   input: string;
   catalogSize: number;
   matches: CivilServiceMatch[];
-  fallback: { serviceType: CivilServiceType; confidence: CivilServiceGuideResult['confidence'] };
+  secondaryClassifier: { serviceType: CivilServiceType; confidence: CivilServiceGuideResult['confidence'] };
   boundarySummary: Record<IntegrationBoundary, number>;
 } {
   const matches = CIVIL_SERVICE_ITEMS.map((item) => {
@@ -132,7 +132,7 @@ export function classifyCivilServiceCatalog(text: string, limit = 5): {
     input: text,
     catalogSize: CIVIL_SERVICE_ITEMS.length,
     matches,
-    fallback: inferCivilServiceType(text),
+    secondaryClassifier: inferCivilServiceType(text),
     boundarySummary: {
       available_now: CIVIL_SERVICE_ITEMS.filter((item) => item.boundary === 'available_now').length,
       needs_user_auth_or_api: CIVIL_SERVICE_ITEMS.filter((item) => item.boundary === 'needs_user_auth_or_api').length,
