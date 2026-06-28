@@ -8,6 +8,7 @@ import {
   type IntegrationBoundary,
   type KepcoCivilServiceItem
 } from './kepcoData.js';
+import { getApiReadiness, getPublicApis } from './publicApis.js';
 
 export interface CivilServiceInput {
   text: string;
@@ -375,6 +376,8 @@ export function getKepcoIntegrationStatus(): {
   needsPartnerAgreement: string[];
   suggestedMvpFlow: string[];
   dataSources: typeof OFFICIAL_DATA_SOURCES;
+  publicApis: ReturnType<typeof getPublicApis>;
+  apiReadiness: ReturnType<typeof getApiReadiness>;
   civilServiceCatalog: {
     total: number;
     availableNow: number;
@@ -391,8 +394,13 @@ export function getKepcoIntegrationStatus(): {
       '필요 정보/서류 체크리스트 생성',
       '한전ON 제출 전 신청/문의 문안 작성',
       '한전ON 공식 메뉴 링크 연결',
+      '카카오 로컬 API로 장소명/주소를 좌표로 변환',
       '공공데이터포털 전기차 충전소 API 또는 사용자가 제공한 충전소 후보 기반 도착시점 방문 플랜 생성',
-      '실시간 충전소 API 또는 사용자가 제공한 후보 기준의 제한적 방문 플랜 생성'
+      '한전 전력데이터개방포털 API 기반 신재생 계약현황/분산전원 연계정보 조회',
+      '신재생 발전 판매를 위한 SMP/REC 수익 산식과 입력값 체크리스트 생성',
+      '사용자가 평균 기준값을 제공한 경우 우리집 전력사용량 평균 비교',
+      '기상청 API 또는 사용자 입력 날씨 기반 전기요금/절약 조언',
+      '사용자 입력 발전량/일사량 기반 태양광 요금절감 시뮬레이션'
     ],
     needsKepcoOrUserAuth: [
       '개인 고객번호 기반 실제 청구/납부 내역 조회',
@@ -400,7 +408,9 @@ export function getKepcoIntegrationStatus(): {
       '명의변경/전기사용신청 최종 제출',
       '요금 실제 납부',
       '고객별 AMI 실시간 사용량 조회',
-      '한전ON 민원 접수 결과 조회'
+      '한전ON 민원 접수 결과 조회',
+      '한전ON 인증이 필요한 개인별 평균사용량/지역사용량/사업소 조회',
+      'KPX 상세기능 endpoint가 설정되지 않은 상태의 SMP/REC 실시간 자동 조회'
     ],
     needsPartnerAgreement: [
       '충전사업자 예약/관제 API를 통한 실제 충전소 예약 확정',
@@ -410,12 +420,16 @@ export function getKepcoIntegrationStatus(): {
     ],
     suggestedMvpFlow: [
       '사용자 자연어 입력',
-      '요금/민원/고장신고 intent 분류',
-      '계산 가능한 건 즉시 계산',
+      '요금/민원/EV/날씨/태양광/신재생 판매 intent 분류',
+      '공공 API가 설정된 기능은 API 우선 조회',
+      'API 키나 endpoint가 없는 기능은 임의값 없이 unavailable 반환',
+      '계산 가능한 건 공식 요금표 기준으로 즉시 계산',
       '인증 필요한 건 신청서 초안과 필요서류 체크리스트 생성',
       '한전ON 공식 메뉴로 handoff'
     ],
     dataSources: getUserVisibleOfficialDataSources(),
+    publicApis: getPublicApis(),
+    apiReadiness: getApiReadiness(),
     civilServiceCatalog: {
       total: CIVIL_SERVICE_ITEMS.length,
       availableNow: CIVIL_SERVICE_ITEMS.filter((item) => item.boundary === 'available_now').length,

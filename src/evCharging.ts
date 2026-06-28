@@ -1,4 +1,5 @@
 import { XMLParser } from 'fast-xml-parser';
+import { resolveKakaoLocation, type KakaoLocationResult } from './kakaoLocal.js';
 import { getUserVisibleOfficialDataSources, type IntegrationBoundary, type OfficialDataSource } from './kepcoData.js';
 
 export type ChargerStatus = 'available' | 'charging' | 'reserved' | 'faulted' | 'unknown';
@@ -94,6 +95,7 @@ export interface EvChargingPlanResult {
     fetchedCount?: number;
     candidateCount?: number;
     serviceKeyConfigured: boolean;
+    geocoding?: KakaoLocationResult;
     message: string;
   };
   planA?: EvChargingPlanCandidate;
@@ -109,10 +111,10 @@ export interface EvChargingPlanResult {
   disclaimer: string;
 }
 
-const KECO_EV_CHARGER_INFO_ENDPOINT = 'http://apis.data.go.kr/B552584/EvCharger/getChargerInfo';
-const KECO_EV_CHARGER_TIMEOUT_MS = 25000;
-const CONTEST_FALLBACK_EV_CHARGER_SERVICE_KEY =
-  '904eb0cc7c3d3fddba7f2827cbe23a019955e96e25cfca1b57b0efd39d1b1247';
+const KECO_EV_CHARGER_BASE_URL = 'http://apis.data.go.kr/B552584/EvCharger';
+const KECO_EV_CHARGER_INFO_ENDPOINT = `${KECO_EV_CHARGER_BASE_URL}/getChargerInfo`;
+const KECO_EV_CHARGER_STATUS_ENDPOINT = `${KECO_EV_CHARGER_BASE_URL}/getChargerStatus`;
+const KECO_EV_CHARGER_TIMEOUT_MS = 15000;
 
 const ZCODE_ALIASES: Array<{ zcode: string; aliases: string[] }> = [
   { zcode: '11', aliases: ['서울', '서울특별시'] },
@@ -254,6 +256,68 @@ function connectorTypeFromKecoCode(chgerType?: string): string | undefined {
     '89': 'H2'
   };
   return labels[code] ?? chgerType;
+}
+
+interface KecoEvParsedResponse {
+  response?: {
+    body?: {
+      items?: { item?: Record<string, unknown> | Array<Record<string, unknown>> };
+      totalCount?: string | number;
+    };
+    header?: { resultCode?: string; resultMsg?: string };
+  };
+  OpenAPI_ServiceResponse?: {
+    cmmMsgHeader?: { errMsg?: string; returnAuthMsg?: string; returnReasonCode?: string };
+  };
+}
+
+function parseKecoEvItems(xml: string): {
+  items: Array<Record<string, unknown>>;
+  errorMessage?: string;
+} {
+  const parsed = new XMLParser({ ignoreAttributes: false, parseTagValue: false }).parse(xml) as KecoEvParsedResponse;
+  const authError = parsed.OpenAPI_ServiceResponse?.cmmMsgHeader;
+  if (authError) {
+    return {
+      items: [],
+      errorMessage: authError.returnAuthMsg ?? authError.errMsg ?? authError.returnReasonCode ?? 'unknown'
+    };
+  }
+  const resultCode = parsed.response?.header?.resultCode;
+  if (resultCode && resultCode !== '00') {
+    return {
+      items: [],
+      errorMessage: parsed.response?.header?.resultMsg ?? resultCode
+    };
+  }
+  return { items: ensureArray(parsed.response?.body?.items?.item) };
+}
+
+function chargerKeyFromKecoItem(item: Record<string, unknown>): string | undefined {
+  const statId = String(item.statId ?? '').trim();
+  const chgerId = String(item.chgerId ?? '').trim();
+  return statId && chgerId ? `${statId}:${chgerId}` : undefined;
+}
+
+function buildStatusByChargerKey(items: Array<Record<string, unknown>>): Map<string, Record<string, unknown>> {
+  const statusByKey = new Map<string, Record<string, unknown>>();
+  for (const item of items) {
+    const key = chargerKeyFromKecoItem(item);
+    if (key) {
+      statusByKey.set(key, item);
+    }
+  }
+  return statusByKey;
+}
+
+function mergeKecoStatus(
+  infoItems: Array<Record<string, unknown>>,
+  statusByKey: Map<string, Record<string, unknown>>
+): Array<Record<string, unknown>> {
+  return infoItems.map((item) => {
+    const status = statusByKey.get(chargerKeyFromKecoItem(item) ?? '');
+    return status ? { ...item, ...status } : item;
+  });
 }
 
 function chargerStatusFromKeco(stat?: string | number): ChargerStatus {
@@ -534,21 +598,51 @@ function resolveEvArea(input: EvChargingPlanInput): { locationText?: string; zco
   };
 }
 
-function buildKecoUrl(input: EvChargingPlanInput, serviceKey: string, zcode?: string, zscode?: string): string {
+async function enrichEvInputWithKakaoLocation(input: EvChargingPlanInput): Promise<{
+  input: EvChargingPlanInput;
+  geocoding?: KakaoLocationResult;
+}> {
+  if (typeof input.latitude === 'number' && typeof input.longitude === 'number') {
+    return { input };
+  }
+  const locationText = extractLocationText(input);
+  if (!locationText) {
+    return { input };
+  }
+  const geocoding = await resolveKakaoLocation(locationText);
+  if (!geocoding.used || !geocoding.location) {
+    return { input, geocoding };
+  }
+  const location = geocoding.location;
+  return {
+    geocoding,
+    input: {
+      ...input,
+      latitude: location.latitude,
+      longitude: location.longitude,
+      locationText: [input.locationText, location.placeName, location.addressName, location.roadAddressName]
+        .filter(Boolean)
+        .join(' ')
+    }
+  };
+}
+
+function buildKecoUrl(endpoint: string, input: EvChargingPlanInput, serviceKey: string, zcode?: string): string {
   const params = new URLSearchParams();
   params.set('pageNo', '1');
-  params.set('numOfRows', String(Math.min(Math.max(input.apiNumOfRows ?? 20, 10), 100)));
+  const defaultRows = typeof input.latitude === 'number' && typeof input.longitude === 'number' ? 1000 : 100;
+  params.set('numOfRows', String(Math.min(Math.max(input.apiNumOfRows ?? defaultRows, 10), 9999)));
+  if (endpoint === KECO_EV_CHARGER_STATUS_ENDPOINT) {
+    params.set('period', String(Math.min(Math.max(input.apiPeriodMinutes ?? 5, 1), 10)));
+  }
   if (zcode) {
     params.set('zcode', zcode);
   }
-  if (zscode) {
-    params.set('zscode', zscode);
-  }
-  return `${KECO_EV_CHARGER_INFO_ENDPOINT}?ServiceKey=${serviceKey}&${params.toString()}`;
+  return `${endpoint}?ServiceKey=${serviceKey}&${params.toString()}`;
 }
 
 function getEvChargerServiceKey(): string | undefined {
-  return process.env.EV_CHARGER_SERVICE_KEY || process.env.DATA_GO_KR_SERVICE_KEY || CONTEST_FALLBACK_EV_CHARGER_SERVICE_KEY;
+  return process.env.EV_CHARGER_SERVICE_KEY || process.env.DATA_GO_KR_SERVICE_KEY;
 }
 
 function hasEvChargerServiceKey(): boolean {
@@ -591,6 +685,9 @@ function filterLiveCandidates(candidates: ChargerCandidateInput[], input: EvChar
       if (typeof input.latitude === 'number' && typeof input.longitude === 'number' && typeof candidate.distanceKm === 'number') {
         return candidate.distanceKm <= radiusKm;
       }
+      if (typeof input.latitude === 'number' && typeof input.longitude === 'number') {
+        return true;
+      }
       if (!keyword) {
         return true;
       }
@@ -630,13 +727,14 @@ async function fetchKecoEvChargerCandidates(input: EvChargingPlanInput): Promise
     };
   }
 
-  const endpoint = buildKecoUrl(input, serviceKey, zcode, zscode);
+  const infoEndpoint = buildKecoUrl(KECO_EV_CHARGER_INFO_ENDPOINT, input, serviceKey, zcode);
+  const statusEndpoint = buildKecoUrl(KECO_EV_CHARGER_STATUS_ENDPOINT, input, serviceKey, zcode);
   let response: Response;
   let xml: string;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), KECO_EV_CHARGER_TIMEOUT_MS);
   try {
-    response = await fetch(endpoint, { signal: controller.signal });
+    response = await fetch(infoEndpoint, { signal: controller.signal });
     xml = await response.text();
   } catch (error) {
     return {
@@ -688,21 +786,43 @@ async function fetchKecoEvChargerCandidates(input: EvChargingPlanInput): Promise
     };
   }
 
-  const items = ensureArray(parsed.response?.body?.items?.item);
+  let items = ensureArray(parsed.response?.body?.items?.item);
+  let statusMessage = '';
+  const statusController = new AbortController();
+  const statusTimeout = setTimeout(() => statusController.abort(), KECO_EV_CHARGER_TIMEOUT_MS);
+  try {
+    const statusResponse = await fetch(statusEndpoint, { signal: statusController.signal });
+    const statusXml = await statusResponse.text();
+    if (statusResponse.ok) {
+      const status = parseKecoEvItems(statusXml);
+      if (status.errorMessage) {
+        statusMessage = ` 상태 조회는 실패했습니다: ${status.errorMessage}`;
+      } else if (status.items.length > 0) {
+        items = mergeKecoStatus(items, buildStatusByChargerKey(status.items));
+        statusMessage = ` 상태 조회 ${status.items.length}건을 병합했습니다.`;
+      }
+    } else {
+      statusMessage = ` 상태 조회 HTTP 오류: ${statusResponse.status}`;
+    }
+  } catch (error) {
+    statusMessage = ` 상태 조회 네트워크 오류: ${describeFetchError(error)}`;
+  } finally {
+    clearTimeout(statusTimeout);
+  }
   const mapped = items
     .map((item) => mapKecoChargerInfoItemToCandidate(item, input))
     .filter((candidate): candidate is ChargerCandidateInput => Boolean(candidate));
   const filtered = filterLiveCandidates(mapped, input);
   return {
     candidates: filtered,
-    endpoint: KECO_EV_CHARGER_INFO_ENDPOINT,
+    endpoint: `${KECO_EV_CHARGER_INFO_ENDPOINT}; ${KECO_EV_CHARGER_STATUS_ENDPOINT}`,
     zcode,
     zscode,
     fetchedCount: mapped.length,
     message:
-      filtered.length > 0
-        ? `공공데이터포털 충전소 API에서 ${mapped.length}개 후보를 조회하고 조건에 맞는 ${filtered.length}개 후보를 사용했습니다.`
-        : `공공데이터포털 충전소 API에서 ${mapped.length}개 후보를 조회했지만 입력 위치/반경/키워드 조건에 맞는 후보가 없습니다.`
+      (filtered.length > 0
+        ? `공공데이터포털 전기차 충전소 정보 API에서 ${mapped.length}개 후보를 조회하고 조건에 맞는 ${filtered.length}개 후보를 사용했습니다.`
+        : `공공데이터포털 전기차 충전소 정보 API에서 ${mapped.length}개 후보를 조회했지만 입력 위치/반경/커넥터/출력 조건에 맞는 후보가 없습니다. 좌표가 있다면 radiusKm를 넓히거나 커넥터/출력 조건을 완화해 다시 조회할 수 있습니다.`) + statusMessage
   };
 }
 
@@ -732,7 +852,7 @@ function buildEvChargingPlan(
     parsed: {
       origin: input.origin,
       destination: input.destination,
-      locationText: input.locationText,
+      locationText: input.locationText ?? area.locationText,
       latitude: input.latitude,
       longitude: input.longitude,
       radiusKm: input.radiusKm,
@@ -797,7 +917,7 @@ function buildUnavailableEvChargingPlan(
     parsed: {
       origin: input.origin,
       destination: input.destination,
-      locationText: input.locationText,
+      locationText: input.locationText ?? area.locationText,
       latitude: input.latitude,
       longitude: input.longitude,
       radiusKm: input.radiusKm,
@@ -844,9 +964,10 @@ export async function planEvChargingVisitWithLiveData(input: EvChargingPlanInput
   }
 
   const serviceKeyConfigured = hasEvChargerServiceKey();
-  const live = await fetchKecoEvChargerCandidates(input);
+  const enriched = await enrichEvInputWithKakaoLocation(input);
+  const live = await fetchKecoEvChargerCandidates(enriched.input);
   if (live.candidates.length > 0) {
-    return buildEvChargingPlan(input, live.candidates, 'live_public_api', {
+    return buildEvChargingPlan(enriched.input, live.candidates, 'live_public_api', {
       attempted: true,
       used: true,
       endpoint: live.endpoint,
@@ -855,11 +976,12 @@ export async function planEvChargingVisitWithLiveData(input: EvChargingPlanInput
       fetchedCount: live.fetchedCount,
       candidateCount: live.candidates.length,
       serviceKeyConfigured,
+      geocoding: enriched.geocoding,
       message: live.message
     });
   }
 
-  return buildUnavailableEvChargingPlan(input, live.message, {
+  return buildUnavailableEvChargingPlan(enriched.input, live.message, {
     attempted: true,
     used: false,
     endpoint: live.endpoint,
@@ -868,6 +990,7 @@ export async function planEvChargingVisitWithLiveData(input: EvChargingPlanInput
     fetchedCount: live.fetchedCount,
     candidateCount: 0,
     serviceKeyConfigured,
+    geocoding: enriched.geocoding,
     message: live.message
   });
 }

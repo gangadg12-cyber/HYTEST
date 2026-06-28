@@ -8,7 +8,12 @@ import {
   prepareApplicationDraft
 } from './civilService.js';
 import { inferEvZcode, inferEvZscode, mapKecoChargerInfoItemToCandidate, planEvChargingVisit, planEvChargingVisitWithLiveData } from './evCharging.js';
+import { compareHomeElectricityUsage } from './homeUsage.js';
 import { getOfficialDataSourcesResult } from './kepcoData.js';
+import { getApiReadiness, getPublicApis } from './publicApis.js';
+import { analyzeRenewableEnergySale } from './renewableSale.js';
+import { checkSolarRegion } from './solar.js';
+import { adviseWeatherPowerUsage } from './weatherPower.js';
 
 const bill = calculateResidentialBill({
   monthlyKwh: 350,
@@ -22,6 +27,8 @@ const pureBill = estimateBill({
 });
 assert.equal(pureBill.currentBill?.estimatedTotalWon, 70640);
 assert.ok(pureBill.currentBillSummary?.includes('70,640원'));
+assert.equal(pureBill.parsed.applianceName, undefined);
+assert.deepEqual(pureBill.parsed.missingFields, []);
 
 const julyBill = estimateBill({
   text: '7월에 460kWh 쓰면 전기요금이 얼마나 나와?'
@@ -167,6 +174,12 @@ assert.equal(liveDisabled.dataMode, 'unavailable');
 assert.equal(liveDisabled.candidates.length, 0);
 assert.equal(liveDisabled.planA, undefined);
 assert.ok(liveDisabled.visitPlanText.includes('임의 충전소를 추천하지 않습니다'));
+const liveNoKey = await planEvChargingVisitWithLiveData({
+  locationText: '서울 강남구',
+  connectorType: 'DC콤보'
+});
+assert.equal(liveNoKey.dataMode, 'unavailable');
+assert.equal(liveNoKey.liveApi?.serviceKeyConfigured, false);
 if (originalEvKey === undefined) {
   delete process.env.EV_CHARGER_SERVICE_KEY;
 } else {
@@ -201,6 +214,76 @@ const integration = getKepcoIntegrationStatus();
 assert.equal(integration.civilServiceCatalog.total, 63);
 assert.ok(integration.availableNow.some((item) => item.includes('전기요금')));
 assert.ok(integration.needsPartnerAgreement.some((item) => item.includes('충전')));
+
+assert.ok(integration.publicApis.some((api) => api.code === 'S3'));
+assert.ok(integration.apiReadiness.some((api) => api.code === 'W1'));
+
+const weatherUnavailable = await adviseWeatherPowerUsage({
+  text: 'weather based power advice',
+  useLiveApi: false
+});
+assert.equal(weatherUnavailable.dataMode, 'unavailable');
+assert.equal(weatherUnavailable.riskLevel, 'unknown');
+
+const weatherProvided = await adviseWeatherPowerUsage({
+  temperatureC: 35,
+  alertType: 'heat_wave',
+  baseMonthlyKwh: 350,
+  powerW: 1500,
+  hoursPerDay: 6,
+  daysPerMonth: 30,
+  useLiveApi: false
+});
+assert.equal(weatherProvided.dataMode, 'user_provided');
+assert.equal(weatherProvided.riskLevel, 'high');
+assert.ok(typeof weatherProvided.billScenario?.increaseWon === 'number');
+
+const publicWeatherApis = getPublicApis({ feature: 'weather_power_advisor' });
+assert.ok(publicWeatherApis.some((api) => api.code === 'W1'));
+assert.ok(getApiReadiness({ feature: 'solar_region_checker' }).some((api) => api.code === 'S3'));
+
+const renewableUnavailable = await analyzeRenewableEnergySale({
+  text: '태양광 팔려면 뭐가 필요해?',
+  useLiveApi: false
+});
+assert.equal(renewableUnavailable.dataMode, 'unavailable');
+
+const renewableProvided = await analyzeRenewableEnergySale({
+  text: '100kW 태양광 판매 수익 계산',
+  expectedAnnualGenerationKwh: 130000,
+  smpWonPerKwh: 140,
+  recPriceWonPerRec: 70000,
+  recWeight: 1.2,
+  useLiveApi: false
+});
+assert.equal(renewableProvided.dataMode, 'user_provided');
+assert.equal(renewableProvided.revenueEstimate?.estimatedAnnualRevenueWon, 29120000);
+
+const homeUsageUnavailable = compareHomeElectricityUsage({ monthlyKwh: 420 });
+assert.equal(homeUsageUnavailable.dataMode, 'unavailable');
+assert.equal(homeUsageUnavailable.comparison, undefined);
+
+const homeUsageProvided = compareHomeElectricityUsage({
+  monthlyKwh: 420,
+  benchmarkMonthlyKwh: 300,
+  benchmarkLabel: 'test benchmark'
+});
+assert.equal(homeUsageProvided.dataMode, 'user_provided');
+assert.equal(homeUsageProvided.comparison?.level, 'very_high');
+assert.ok(homeUsageProvided.answerSummary.includes('420'));
+
+const solarUnavailable = checkSolarRegion({ solarCapacityKw: 3, currentMonthlyKwh: 420 });
+assert.equal(solarUnavailable.dataMode, 'unavailable');
+assert.equal(solarUnavailable.suitability, 'needs_data');
+
+const solarProvided = checkSolarRegion({
+  solarCapacityKw: 3,
+  averageDailyGenerationKwhPerKw: 3.5,
+  currentMonthlyKwh: 420
+});
+assert.equal(solarProvided.dataMode, 'user_provided');
+assert.equal(solarProvided.generation?.expectedMonthlyGenerationKwh, 315);
+assert.ok(typeof solarProvided.billSaving?.estimatedSavingWon === 'number');
 
 const sources = getOfficialDataSourcesResult();
 assert.ok(sources.markdownSummary.includes('https://online.kepco.co.kr/CUM083D00'));

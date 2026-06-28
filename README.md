@@ -18,6 +18,10 @@ It does not perform real KEPCO login, payment, auto-transfer registration, civil
 - `parse_electricity_usage_request`
 - `estimate_residential_electricity_bill`
 - `compare_electricity_usage_scenarios`
+- `get_public_api_catalog`
+- `compare_home_electricity_usage`
+- `advise_weather_power_usage`
+- `check_solar_region`
 - `classify_kepco_civil_service`
 - `classify_kepco_civil_service_63`
 - `list_kepco_civil_service_catalog`
@@ -52,6 +56,10 @@ Available now:
 - Required-input, likely-document, and missing-field checklist.
 - KEPCO/한전ON draft request text and official path handoff.
 - EV charging visit plan A/B using the public EV charger API when `EV_CHARGER_SERVICE_KEY` is configured or supplied charger candidates.
+- Public API catalog/readiness reporting for KEPCO, KMA, KPX, EV, weather, and solar data.
+- Home usage comparison when a public average-usage API is configured or the user provides a benchmark value.
+- Weather-based power advice using KMA API when configured, or user-provided weather facts.
+- Solar generation and bill-saving simulation when public solar data is configured or the user provides generation/sun-hour assumptions.
 
 Needs KEPCO login, user auth, or official API:
 
@@ -94,9 +102,21 @@ http://localhost:3000/healthz
 
 ```text
 EV_CHARGER_SERVICE_KEY=encoded-data-go-kr-service-key
+DATA_GO_KR_SERVICE_KEY=encoded-data-go-kr-service-key
+KEPCO_BIGDATA_API_KEY=encoded-kepco-bigdata-40-char-key
+KAKAO_REST_API_KEY=kakao-rest-api-key
+KAKAO_MOBILITY_REST_API_KEY=same-as-kakao-rest-api-key-if-needed
+KMA_SHORT_FORECAST_SERVICE_KEY=encoded-kma-service-key
+KPX_SMP_DEMAND_SERVICE_KEY=encoded-kpx-smp-service-key
+KPX_REC_SPOT_SERVICE_KEY=encoded-kpx-rec-service-key
+KPX_REGIONAL_SOLAR_HOURLY_SERVICE_KEY=encoded-kpx-solar-service-key
+KPX_SMP_DEMAND_ENDPOINT=
+KPX_REC_SPOT_ENDPOINT=
 ```
 
-When this key is set, `plan_ev_charging_visit` can call the public KECO EV charger API using a user-provided `locationText`, `zcode`, `zscode`, or coordinates and then rank real charger candidates by distance, status, output, and connector match. The tool uses small paged requests to avoid public API timeouts and returns an explicit unavailable result when the API fails or returns no matching candidates. This contest branch also contains a temporary embedded key because PlayMCP in KC does not expose a runtime environment-variable field in the current UI; remove it and use an environment variable before regular operation.
+When `EV_CHARGER_SERVICE_KEY` and `KAKAO_REST_API_KEY` are set, `plan_ev_charging_visit` can resolve a user-provided place name/address, call the public KECO EV charger info/status APIs by region code, and rank real charger candidates by distance, status, output, and connector match. The public API does not accept arbitrary natural-language address or coordinate filters directly, so the MCP resolves location through Kakao and filters/ranks the returned official candidates internally. No demo key or fabricated charger fallback is embedded.
+
+API-first rule: tools never fabricate public API results. When the needed public API key, endpoint mapping, coordinate, or benchmark is missing, the tool returns `dataMode: "unavailable"` with required API codes instead of demo data.
 
 ## Docker
 

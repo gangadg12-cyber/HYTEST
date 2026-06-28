@@ -213,15 +213,23 @@ export function parseUsageRequest(input: BillEstimateInput): ParsedUsageRequest 
     assumptions.push('전압 구분 입력이 없어 주택용 저압 기준으로 계산했습니다.');
   }
 
+  const hasUsageDetail = typeof powerW === 'number' || typeof hoursPerDay === 'number' || typeof daysPerMonth === 'number';
+  const isCurrentBillOnlyQuery = typeof baseMonthlyKwh === 'number' && !hasUsageDetail && !input.applianceName && !appliance.applianceName;
+  if (isCurrentBillOnlyQuery) {
+    applianceName = undefined;
+  }
+
   const missingFields: string[] = [];
-  if (typeof powerW !== 'number') {
-    missingFields.push('제품 소비전력(W 또는 kW)');
-  }
-  if (typeof hoursPerDay !== 'number') {
-    missingFields.push('하루 사용시간');
-  }
-  if (typeof daysPerMonth !== 'number') {
-    missingFields.push('월 사용일수');
+  if (!isCurrentBillOnlyQuery) {
+    if (typeof powerW !== 'number') {
+      missingFields.push('제품 소비전력(W 또는 kW)');
+    }
+    if (typeof hoursPerDay !== 'number') {
+      missingFields.push('하루 사용시간');
+    }
+    if (typeof daysPerMonth !== 'number') {
+      missingFields.push('월 사용일수');
+    }
   }
 
   return {

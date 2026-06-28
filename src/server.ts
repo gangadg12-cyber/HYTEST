@@ -13,7 +13,12 @@ import {
   prepareApplicationDraft
 } from './civilService.js';
 import { planEvChargingVisitWithLiveData } from './evCharging.js';
+import { compareHomeElectricityUsage } from './homeUsage.js';
 import { getOfficialDataSourcesResult, SERVICE_NAME, SERVICE_NAME_KO, SERVICE_VERSION, type CivilServiceType } from './kepcoData.js';
+import { getApiReadiness, getPublicApis } from './publicApis.js';
+import { analyzeRenewableEnergySale } from './renewableSale.js';
+import { checkSolarRegion } from './solar.js';
+import { adviseWeatherPowerUsage } from './weatherPower.js';
 
 function jsonText(data: unknown): { content: Array<{ type: 'text'; text: string }> } {
   return {
@@ -27,6 +32,8 @@ function jsonText(data: unknown): { content: Array<{ type: 'text'; text: string 
 }
 
 const voltageSchema = z.enum(['low_voltage', 'high_voltage']);
+const seasonSchema = z.enum(['summer', 'other']);
+const publicApiAreaSchema = z.enum(['bill', 'home_usage', 'civil_service', 'ev_charging', 'location', 'weather', 'solar', 'power_grid']);
 const civilServiceSchema = z.enum([
   'name_change',
   'move_settlement',
@@ -83,7 +90,7 @@ function createServer(): McpServer {
     },
     {
       instructions:
-        'Use KEPCO Electric Agent tools for Korean electricity bill estimation, appliance usage cost simulation, KEPCO civil service routing, EV charging visit planning, and application draft preparation. For appliance questions, call the bill-estimation tool even when wattage or usage time is missing because the server has appliance presets and missing-field guidance. Do not claim to submit KEPCO 민원, payment, auto-transfer, or confirmed EV charger reservations unless an authenticated partner integration is added.'
+        'Use KEPCO Electric Agent tools as an API-first Korean electricity life assistant. Prefer public API backed tools for home-usage comparison, weather-based power advice, EV charging, solar/renewable sale checks, and integration status. If a public API key or endpoint is missing, return the tool result as unavailable instead of inventing demo data. For appliance questions, call the bill-estimation tool even when wattage or usage time is missing because the server has appliance presets and missing-field guidance. Do not claim to submit KEPCO civil-service requests, payment, auto-transfer, or confirmed EV charger reservations unless an authenticated partner integration is added.'
     }
   );
 
@@ -174,6 +181,163 @@ function createServer(): McpServer {
       }
     },
     async (input) => jsonText(compareUsageScenarios(input))
+  );
+
+  server.registerTool(
+    'get_public_api_catalog',
+    {
+      title: 'Get Public API Catalog',
+      description:
+        'Use when the user asks which official/public APIs back this MCP, which features are API-backed, what API keys are needed, or what is currently unavailable. Returns KEPCO/KMA/KPX/EV/solar API catalog and readiness.',
+      inputSchema: {
+        area: publicApiAreaSchema.optional().describe('Optional area filter such as bill, home_usage, weather, solar, ev_charging, power_grid.'),
+        feature: z
+          .string()
+          .min(1)
+          .max(80)
+          .optional()
+          .describe('Optional feature filter such as electric_bill, compare_home_usage, weather_power_advisor, solar_region_checker, ev_charging.'),
+        includeReadiness: z.boolean().optional().describe('Whether to include environment/API key readiness. Defaults to true.')
+      },
+      annotations: {
+        title: 'Get Public API Catalog',
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: false,
+        idempotentHint: true
+      }
+    },
+    async ({ area, feature, includeReadiness }) =>
+      jsonText({
+        apis: getPublicApis({ area, feature }),
+        readiness: includeReadiness === false ? undefined : getApiReadiness({ area, feature }),
+        policy:
+          'This MCP is API-first. If a required public API key or endpoint is missing, the related tool returns unavailable instead of fabricated fallback data.'
+      })
+  );
+
+  server.registerTool(
+    'compare_home_electricity_usage',
+    {
+      title: 'Compare Home Electricity Usage',
+      description:
+        'Use when the user asks whether their home electricity usage is higher than average, e.g. "우리집 420kWh면 평균보다 많아?". This is API-first: without a public average usage API or user-provided benchmarkMonthlyKwh, it returns unavailable instead of inventing an average.',
+      inputSchema: {
+        text: z.string().min(2).max(2000).optional().describe('Natural-language home usage comparison question.'),
+        monthlyKwh: z.number().min(0).max(10000).optional().describe('User home monthly usage in kWh.'),
+        householdSize: z.number().int().min(1).max(20).optional().describe('Optional household size.'),
+        region: z.string().min(1).max(80).optional().describe('Optional region such as 서울 강남구.'),
+        month: z.number().int().min(1).max(12).optional().describe('Billing/comparison month.'),
+        season: seasonSchema.optional().describe('Optional season override.'),
+        voltageType: voltageSchema.optional().describe('Residential voltage type. Defaults to low_voltage.'),
+        benchmarkMonthlyKwh: z.number().min(0).max(10000).optional().describe('Optional public average benchmark. If omitted and API is not configured, no comparison is fabricated.'),
+        benchmarkLabel: z.string().min(1).max(120).optional().describe('Optional benchmark label.')
+      },
+      annotations: {
+        title: 'Compare Home Electricity Usage',
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: true,
+        idempotentHint: true
+      }
+    },
+    async (input) => jsonText(compareHomeElectricityUsage(input))
+  );
+
+  server.registerTool(
+    'advise_weather_power_usage',
+    {
+      title: 'Advise Weather Power Usage',
+      description:
+        'Use for weather-based electricity advice such as 폭염 냉방비, 한파 전기난방, 피크 시간대, or weather-related bill risk. Calls KMA public API when KMA_SHORT_FORECAST_SERVICE_KEY/DATA_GO_KR_SERVICE_KEY and nx/ny are available; if locationText is provided, it can resolve coordinates through Kakao Local first. Otherwise requires user-provided weather data.',
+      inputSchema: {
+        text: z.string().min(2).max(2000).optional().describe('Natural-language weather/power question.'),
+        locationText: z.string().min(1).max(160).optional().describe('Optional location text. KMA API still needs nx/ny unless geocoding is added.'),
+        nx: z.number().int().min(1).max(200).optional().describe('KMA grid x coordinate.'),
+        ny: z.number().int().min(1).max(200).optional().describe('KMA grid y coordinate.'),
+        temperatureC: z.number().min(-50).max(60).optional().describe('User-provided current or forecast temperature in Celsius.'),
+        alertType: z.enum(['heat_wave', 'cold_wave', 'heavy_rain', 'typhoon', 'none']).optional().describe('Optional weather alert type.'),
+        baseMonthlyKwh: z.number().min(0).max(10000).optional().describe('Current monthly electricity usage for bill risk simulation.'),
+        applianceName: z.string().min(1).max(80).optional().describe('Optional weather-related appliance such as 에어컨 or 전기히터.'),
+        powerW: z.number().positive().max(100000).optional().describe('Optional appliance power in watts.'),
+        hoursPerDay: z.number().positive().max(24).optional().describe('Optional expected daily use hours.'),
+        daysPerMonth: z.number().positive().max(31).optional().describe('Optional expected monthly use days.'),
+        useLiveApi: z.boolean().optional().describe('Set false to skip KMA API lookup.')
+      },
+      annotations: {
+        title: 'Advise Weather Power Usage',
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: true,
+        idempotentHint: true
+      }
+    },
+    async (input) => jsonText(await adviseWeatherPowerUsage(input))
+  );
+
+  server.registerTool(
+    'check_solar_region',
+    {
+      title: 'Check Solar Region',
+      description:
+        'Use for solar or renewable questions such as "태양광 설치하면 우리 지역 괜찮아?", "3kW 태양광이면 요금 얼마나 줄어?", or "전기차랑 태양광 같이 쓰면 이득이야?". It is API-first and returns unavailable unless public solar API data or user-provided generation/sun-hour assumptions are available.',
+      inputSchema: {
+        text: z.string().min(2).max(2000).optional().describe('Natural-language solar question.'),
+        region: z.string().min(1).max(100).optional().describe('Optional region.'),
+        latitude: z.number().min(33).max(39).optional().describe('Optional latitude in Korea.'),
+        longitude: z.number().min(124).max(132).optional().describe('Optional longitude in Korea.'),
+        solarCapacityKw: z.number().positive().max(1000).optional().describe('Solar PV capacity in kW. Defaults to 3kW.'),
+        averageDailyGenerationKwhPerKw: z.number().positive().max(10).optional().describe('User-provided average daily generation per 1kW PV.'),
+        averageDailySunHours: z.number().positive().max(15).optional().describe('User-provided average effective sun hours per day.'),
+        currentMonthlyKwh: z.number().min(0).max(10000).optional().describe('Current monthly electricity usage for bill-saving simulation.'),
+        voltageType: voltageSchema.optional().describe('Residential voltage type. Defaults to low_voltage.'),
+        season: seasonSchema.optional().describe('Optional tariff season.')
+      },
+      annotations: {
+        title: 'Check Solar Region',
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: true,
+        idempotentHint: true
+      }
+    },
+    async (input) => jsonText(checkSolarRegion(input))
+  );
+
+  server.registerTool(
+    'analyze_renewable_energy_sale',
+    {
+      title: 'Analyze Renewable Energy Sale',
+      description:
+        'Use when the user asks about selling electricity from solar/renewable generation, PPA, SMP/REC revenue, grid interconnection, renewable contract status, or whether a location is suitable for renewable power sale. Calls KEPCO Bigdata APIs for common codes, renewable contracts, and dispersed generation when KEPCO_BIGDATA_API_KEY is configured. Uses user-provided SMP/REC or configured KPX endpoints without inventing prices.',
+      inputSchema: {
+        text: z.string().min(2).max(2000).optional().describe('Natural-language renewable sale question.'),
+        locationText: z.string().min(1).max(200).optional().describe('Installation/sale location such as address, city, district, or place name.'),
+        year: z.number().int().min(2010).max(2100).optional().describe('KEPCO renewable contract status year. Defaults to previous year.'),
+        metroCd: z.string().min(2).max(2).optional().describe('KEPCO metro code from commonCode.do codeTy=metroCd.'),
+        cityCd: z.string().min(2).max(5).optional().describe('KEPCO city/district code from commonCode.do codeTy=cityCd.'),
+        addrLidong: z.string().min(1).max(80).optional().describe('Legal dong/myeon text for dispersedGeneration.do.'),
+        addrLi: z.string().min(1).max(80).optional().describe('Ri address for dispersedGeneration.do.'),
+        addrJibun: z.string().min(1).max(80).optional().describe('Jibun address detail for dispersedGeneration.do.'),
+        substCd: z.string().min(1).max(20).optional().describe('Optional substation code for dispersedGeneration.do.'),
+        genSrcCd: z.string().min(1).max(4).optional().describe('Generation source code. Defaults to 1 for solar.'),
+        generationSource: z.string().min(1).max(80).optional().describe('Generation source label such as solar, wind, small hydro.'),
+        solarCapacityKw: z.number().positive().max(100000).optional().describe('Planned installed capacity in kW.'),
+        expectedAnnualGenerationKwh: z.number().positive().max(1000000000).optional().describe('Expected annual generation in kWh.'),
+        recWeight: z.number().positive().max(10).optional().describe('REC weight. Defaults to 1.'),
+        smpWonPerKwh: z.number().positive().max(10000).optional().describe('User-provided SMP in KRW/kWh.'),
+        recPriceWonPerRec: z.number().positive().max(1000000).optional().describe('User-provided REC price in KRW/REC.'),
+        useLiveApi: z.boolean().optional().describe('Set false to skip live KEPCO/Kakao/KPX API calls.')
+      },
+      annotations: {
+        title: 'Analyze Renewable Energy Sale',
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: true,
+        idempotentHint: true
+      }
+    },
+    async (input) => jsonText(await analyzeRenewableEnergySale(input))
   );
 
   server.registerTool(
