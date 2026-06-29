@@ -63,6 +63,7 @@ export interface RenewableSaleResult {
     assumptions: string[];
   };
   answerSummary: string;
+  userFacingSummary: string[];
   clarifyingQuestions: string[];
   nextQuestions: string[];
   requiredApis: ReturnType<typeof getPublicApis>;
@@ -450,6 +451,34 @@ function buildRenewableSummary(input: {
   return parts.join('\n');
 }
 
+function buildRenewableUserFacingSummary(input: {
+  parsed: RenewableSaleResult['parsed'];
+  revenueEstimate?: RenewableSaleResult['revenueEstimate'];
+  renewableContracts?: ReturnType<typeof summarizeRenewableContracts>;
+  dispersedGeneration?: ReturnType<typeof summarizeDispersedGeneration>;
+  clarifyingQuestions: string[];
+}): string[] {
+  const summary: string[] = [];
+  if (input.revenueEstimate) {
+    summary.push(`예상 연 매출: 약 ${input.revenueEstimate.estimatedAnnualRevenueWon.toLocaleString('ko-KR')}원`);
+    summary.push(
+      `SMP ${input.revenueEstimate.annualSmpRevenueWon.toLocaleString('ko-KR')}원 + REC ${input.revenueEstimate.annualRecRevenueWon.toLocaleString('ko-KR')}원 기준`
+    );
+  } else {
+    summary.push('신재생 판매 수익 계산에는 연 발전량, SMP, REC 가격이 필요합니다.');
+  }
+  if (input.dispersedGeneration?.used) {
+    summary.push(`분산전원 연계정보: ${input.dispersedGeneration.count}건 조회`);
+  }
+  if (input.renewableContracts?.used) {
+    summary.push(`신재생 계약현황: ${input.renewableContracts.count}건 조회`);
+  }
+  if (input.clarifyingQuestions.length > 0) {
+    summary.push(`추가 확인: ${input.clarifyingQuestions.slice(0, 2).join(' / ')}`);
+  }
+  return summary.slice(0, 5);
+}
+
 export async function analyzeRenewableEnergySale(input: RenewableSaleInput): Promise<RenewableSaleResult> {
   const parsed = parseRenewableInput(input);
   const requiredApis = getPublicApis({ feature: 'renewable_sale' });
@@ -546,6 +575,13 @@ export async function analyzeRenewableEnergySale(input: RenewableSaleInput): Pro
       revenueEstimate,
       renewableContracts: renewableSummary,
       dispersedGeneration: dispersedSummary
+    }),
+    userFacingSummary: buildRenewableUserFacingSummary({
+      parsed: enrichedParsed,
+      revenueEstimate,
+      renewableContracts: renewableSummary,
+      dispersedGeneration: dispersedSummary,
+      clarifyingQuestions
     }),
     clarifyingQuestions,
     nextQuestions: [

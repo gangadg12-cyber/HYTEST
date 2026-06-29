@@ -7,7 +7,7 @@ export interface RouterRegressionQuestion {
 }
 
 export const ROUTER_REGRESSION_QUESTIONS: RouterRegressionQuestion[] = [
-  { id: 'bill-001', text: '우리집 이번 달 350kWh 썼으면 전기요금 얼마 정도 나와?', expectedIntents: ['electric_bill', 'home_usage_comparison'] },
+  { id: 'bill-001', text: '우리집 이번 달 350kWh 썼으면 전기요금 얼마 정도 나와?', expectedIntents: ['electric_bill'] },
   { id: 'bill-002', text: '900W 전자레인지 매일 10분 쓰면 한 달 전기세 얼마나 늘었을까?', expectedIntents: ['usage_comparison'] },
   { id: 'bill-003', text: '제습기 300W 하루 10시간 틀면 요금이 얼마야?', expectedIntents: ['electric_bill'] },
   { id: 'bill-004', text: '7월에 460kWh 쓰면 주택용 전기요금 계산해줘', expectedIntents: ['electric_bill'] },
@@ -50,7 +50,7 @@ export const ROUTER_REGRESSION_QUESTIONS: RouterRegressionQuestion[] = [
   { id: 'renew-005', text: '태양광 REC 가중치가 수익에 얼마나 영향이 있어?', expectedIntents: ['renewable_sale'] },
   { id: 'renew-006', text: '발전사업으로 팔려면 한전 계약현황이랑 계통 정보를 같이 봐야 하나?', expectedIntents: ['renewable_sale'] },
 
-  { id: 'solar-001', text: '우리집 옥상에 3kW 태양광 패널 설치하면 발전량 얼마나 나와?', expectedIntents: ['solar_region', 'home_usage_comparison'] },
+  { id: 'solar-001', text: '우리집 옥상에 3kW 태양광 패널 설치하면 발전량 얼마나 나와?', expectedIntents: ['solar_region'] },
   { id: 'solar-002', text: '서울 강남구는 태양광 자가소비로 전기요금 절약이 될까?', expectedIntents: ['solar_region'] },
   { id: 'solar-003', text: 'kw당 하루 3.5kWh 발전하면 5kW 설비 월 발전량 계산해줘', expectedIntents: ['solar_region'] },
   { id: 'solar-004', text: '일사량 정보 기준으로 패널 설치 적합한 지역인지 봐줘', expectedIntents: ['solar_region'] },

@@ -36,6 +36,7 @@ export interface HomeUsageCompareResult {
     benchmarkBillWon?: number;
   };
   answerSummary: string;
+  userFacingSummary: string[];
   clarifyingQuestions: string[];
   recommendations: string[];
   requiredApis: ReturnType<typeof getPublicApis>;
@@ -115,6 +116,7 @@ export function compareHomeElectricityUsage(input: HomeUsageCompareInput): HomeU
       dataMode: 'unavailable',
       parsed,
       answerSummary: '비교할 월 사용량(kWh)이 필요합니다.',
+      userFacingSummary: ['가구 평균 비교를 위해 월 사용량(kWh)이 필요합니다.', '예: 우리집 420kWh고 평균은 310kWh라고 가정해서 비교해줘'],
       clarifyingQuestions: ['비교할 월 사용량(kWh)을 알려주세요.'],
       recommendations: ['예: "우리집 420kWh 썼는데 평균보다 많아?"처럼 월 사용량을 같이 입력해 주세요.'],
       requiredApis,
@@ -128,6 +130,11 @@ export function compareHomeElectricityUsage(input: HomeUsageCompareInput): HomeU
       dataMode: 'unavailable',
       parsed,
       answerSummary: buildUnavailableApiMessage('가구 평균 전력사용량 비교', ['K2', 'K3', 'K4']),
+      userFacingSummary: [
+        `${parsed.monthlyKwh}kWh 사용량은 확인했습니다.`,
+        '비교 기준 평균 사용량이 필요합니다.',
+        '공공 평균 사용량 API 연동 전에는 benchmarkMonthlyKwh를 직접 입력해야 합니다.'
+      ],
       clarifyingQuestions: ['비교 기준이 되는 평균 월 사용량(kWh)을 알려주거나, 공공 평균 사용량 API 연동 후 다시 조회해 주세요.'],
       recommendations: [
         '현재는 임의 평균값을 넣지 않습니다.',
@@ -175,6 +182,11 @@ export function compareHomeElectricityUsage(input: HomeUsageCompareInput): HomeU
       benchmarkBillWon: benchmarkBill.estimatedTotalWon
     },
     answerSummary: `${parsed.monthlyKwh}kWh는 ${benchmarkLabel} ${parsed.benchmarkMonthlyKwh}kWh 대비 ${Math.abs(differenceKwh)}kWh ${differenceKwh >= 0 ? '많고' : '적고'}, 약 ${Math.abs(differencePercent)}% ${differenceKwh >= 0 ? '높습니다' : '낮습니다'}. 판정은 ${levelText}입니다.`,
+    userFacingSummary: [
+      `${parsed.monthlyKwh}kWh는 기준 ${parsed.benchmarkMonthlyKwh}kWh보다 ${Math.abs(differenceKwh)}kWh ${differenceKwh >= 0 ? '많습니다' : '적습니다'}.`,
+      `차이는 약 ${Math.abs(differencePercent)}%이고 판정은 ${levelText}입니다.`,
+      `예상 요금은 ${estimatedBill.estimatedTotalWon.toLocaleString('ko-KR')}원입니다.`
+    ],
     clarifyingQuestions: [],
     recommendations: [
       level === 'very_high' || level === 'high'

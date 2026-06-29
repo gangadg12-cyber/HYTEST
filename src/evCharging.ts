@@ -231,6 +231,94 @@ const EV_VEHICLE_CONNECTOR_PROFILES: Array<EvVehicleConnectorMatch & { aliases: 
     note: '국내 판매 주요 사양 기준의 급속 충전 커넥터입니다.'
   },
   {
+    vehicleModel: '현대 포터 II 일렉트릭',
+    aliases: ['포터ev', '포터 ev', '포터2ev', '포터2 ev', '포터 일렉트릭', 'porter electric'],
+    connectorType: 'DC콤보',
+    confidence: 'high',
+    sourceLabel: 'Domestic EV connector metadata maintained in MCP source',
+    note: '국내 판매 주요 사양 기준의 급속 충전 커넥터입니다.'
+  },
+  {
+    vehicleModel: '기아 봉고 III EV',
+    aliases: ['봉고ev', '봉고 ev', '봉고3ev', '봉고3 ev', 'bongo ev'],
+    connectorType: 'DC콤보',
+    confidence: 'high',
+    sourceLabel: 'Domestic EV connector metadata maintained in MCP source',
+    note: '국내 판매 주요 사양 기준의 급속 충전 커넥터입니다.'
+  },
+  {
+    vehicleModel: '기아 레이 EV 신형',
+    aliases: ['신형레이ev', '신형 레이 ev', '레이 ev 신형', '레이ev 신형'],
+    connectorType: 'DC콤보',
+    confidence: 'medium',
+    sourceLabel: 'Domestic EV connector metadata maintained in MCP source',
+    note: '레이 EV는 세대별 커넥터 차이가 있어 신형/구형 표현을 우선 확인합니다.'
+  },
+  {
+    vehicleModel: '제네시스 GV60/G80 전동화',
+    aliases: ['gv60', 'g80 전동화', '전동화 g80', 'genesis gv60', 'electrified g80'],
+    connectorType: 'DC콤보',
+    confidence: 'high',
+    sourceLabel: 'Domestic EV connector metadata maintained in MCP source',
+    note: '국내 판매 주요 사양 기준의 급속 충전 커넥터입니다.'
+  },
+  {
+    vehicleModel: 'KG모빌리티 토레스 EVX',
+    aliases: ['토레스evx', '토레스 evx', 'torres evx'],
+    connectorType: 'DC콤보',
+    confidence: 'high',
+    sourceLabel: 'Domestic EV connector metadata maintained in MCP source',
+    note: '국내 판매 주요 사양 기준의 급속 충전 커넥터입니다.'
+  },
+  {
+    vehicleModel: '폴스타 2',
+    aliases: ['폴스타2', '폴스타 2', 'polestar2', 'polestar 2'],
+    connectorType: 'DC콤보',
+    confidence: 'high',
+    sourceLabel: 'Domestic EV connector metadata maintained in MCP source',
+    note: '국내 판매 주요 사양 기준의 급속 충전 커넥터입니다.'
+  },
+  {
+    vehicleModel: '폭스바겐 ID.4',
+    aliases: ['id4', 'id.4', '폭스바겐 id4', '폭스바겐 id.4'],
+    connectorType: 'DC콤보',
+    confidence: 'high',
+    sourceLabel: 'Domestic EV connector metadata maintained in MCP source',
+    note: '국내 판매 주요 사양 기준의 급속 충전 커넥터입니다.'
+  },
+  {
+    vehicleModel: 'BMW i4/iX/iX3',
+    aliases: ['bmw i4', 'bmw ix', 'bmw ix3', 'i4', 'ix3'],
+    connectorType: 'DC콤보',
+    confidence: 'medium',
+    sourceLabel: 'Domestic EV connector metadata maintained in MCP source',
+    note: '국내 공용 급속 충전소 기준으로 매핑했으며 세부 트림/연식 확인이 필요합니다.'
+  },
+  {
+    vehicleModel: '메르세데스-벤츠 EQ 계열',
+    aliases: ['eqe', 'eqs', 'eqa', 'eqb', '벤츠 eq', 'benz eq'],
+    connectorType: 'DC콤보',
+    confidence: 'medium',
+    sourceLabel: 'Domestic EV connector metadata maintained in MCP source',
+    note: '국내 공용 급속 충전소 기준으로 매핑했으며 세부 트림/연식 확인이 필요합니다.'
+  },
+  {
+    vehicleModel: '아우디 e-tron/Q4 e-tron',
+    aliases: ['e-tron', 'etron', 'q4 e-tron', 'q4 etron', '아우디 이트론'],
+    connectorType: 'DC콤보',
+    confidence: 'medium',
+    sourceLabel: 'Domestic EV connector metadata maintained in MCP source',
+    note: '국내 공용 급속 충전소 기준으로 매핑했으며 세부 트림/연식 확인이 필요합니다.'
+  },
+  {
+    vehicleModel: '볼보 C40/XC40 Recharge',
+    aliases: ['c40 recharge', 'xc40 recharge', '볼보 c40', '볼보 xc40'],
+    connectorType: 'DC콤보',
+    confidence: 'medium',
+    sourceLabel: 'Domestic EV connector metadata maintained in MCP source',
+    note: '국내 공용 급속 충전소 기준으로 매핑했으며 세부 트림/연식 확인이 필요합니다.'
+  },
+  {
     vehicleModel: '테슬라 모델 3/Y',
     aliases: ['모델3', '모델 3', '모델y', '모델 y', 'model3', 'model 3', 'modely', 'model y', '테슬라'],
     connectorType: 'DC콤보',

@@ -108,31 +108,37 @@ function detectIntents(text: string): IntentCandidate[] {
   const loose = compact(text);
   const candidates: IntentCandidate[] = [];
 
-  const hasUsageUnit = /(\d+(?:\.\d+)?)\s*(?:kwh|kw\s*h|w\b|kw\b|와트|킬로와트시|키로와트)/i.test(text);
+  const hasKwhUsageUnit = /(\d+(?:\.\d+)?)\s*(?:kwh|kw\s*h|킬로와트시)/i.test(text);
+  const hasUsageUnit = hasKwhUsageUnit || /(\d+(?:\.\d+)?)\s*(?:w\b|kw\b|와트|키로와트)/i.test(text);
   const hasBillWord = hasAny(text, [/전기\s*요금|요금|얼마|청구|전기세|냉방비|난방비|절약|아껴/]);
+  const hasExplicitBillTerm = hasAny(text, [/전기\s*요금|요금|전기세|청구|냉방비|난방비/]);
   const hasComparisonWord = hasAny(text, [/비교|차이|줄이면|줄였|줄여|감소|절감|늘면|늘었|더\s*썼|아껴|시나리오|몇\s*시간/]);
   const hasCivilWord = hasAny(text, [
     /한전|한전ON|민원|신청|명의|이사\s*정산|전기사용신청|증설|계약전력|자동이체|청구서|고객번호|복지할인|정전|전기고장|서류|신청서|양식|FAQ|자주\s*묻/
   ]);
+  const hasCivilActionWord = hasAny(text, [
+    /민원|신청|명의|이사\s*정산|전기사용신청|증설|계약전력|자동이체|청구서|고객번호|복지할인|정전|전기고장|서류|신청서|양식|FAQ|자주\s*묻|제출|조회/
+  ]);
+  const hasEvCivilServiceWord = hasAny(text, [/충전소.*(?:사용량|제출|민원|신청서|서류)|충전기.*(?:사용량|제출|민원|신청서|서류)|전기차충전소.*(?:사용량|제출)/]);
   const hasEvChargingWord = hasAny(text, [/충전소|충전기|급속|완속|dc\s*콤보|dc콤보|차데모|chademo|휴게소|방문\s*플랜|충전\s*예약/]);
   const hasRenewableSaleWord = hasAny(text, [/rec|smp|ppa|판매|팔|수익|계통|분산전원|연계|발전사업|상계거래|신재생\s*판매/]);
   const hasSolarWord = hasAny(text, [/태양광|패널|일사량|발전량|자가소비|kw당/]);
   const hasWeatherWord = hasAny(text, [/폭염|한파|기상|날씨|더위|더워|덥|추위|추워|춥|장마|호우|태풍|냉방|난방/]);
-  const hasAverageWord = hasAny(text, [/평균|우리집|우리\s*집|많이\s*쓰|적게\s*쓰|가구/]);
+  const hasAverageWord = hasAny(text, [/평균|많이\s*쓰|적게\s*쓰|가구/]);
 
-  if (hasUsageUnit && hasComparisonWord) {
+  if (hasUsageUnit && hasComparisonWord && !hasSolarWord) {
     candidates.push({ type: 'usage_comparison', confidence: 'high', reason: '사용량/요금 비교 또는 절감 시나리오 표현 감지' });
   }
-  if (hasUsageUnit && hasBillWord && !hasComparisonWord) {
+  if (hasUsageUnit && hasBillWord && !hasComparisonWord && !hasSolarWord && (!hasAverageWord || hasExplicitBillTerm)) {
     candidates.push({ type: 'electric_bill', confidence: 'high', reason: 'kWh/W/kW와 요금 질문 표현 감지' });
   }
-  if (!hasUsageUnit && hasBillWord && hasAny(text, [/에어컨|건조기|전자레인지|공기청정기|전기장판|히터|냉장고|제습기|전기차/])) {
+  if (!hasUsageUnit && hasBillWord && !hasWeatherWord && hasAny(text, [/에어컨|건조기|전자레인지|공기청정기|전기장판|히터|냉장고|제습기|전기차/])) {
     candidates.push({ type: 'electric_bill', confidence: 'medium', reason: '제품 사용 요금 질문 표현 감지' });
   }
-  if (hasAverageWord && hasUsageUnit) {
+  if (hasAverageWord && hasKwhUsageUnit) {
     candidates.push({ type: 'home_usage_comparison', confidence: 'medium', reason: '가구/평균 사용량 비교 표현 감지' });
   }
-  if (hasCivilWord && !/충전소|충전기/.test(loose)) {
+  if (hasCivilWord && (!/충전소|충전기/.test(loose) || hasEvCivilServiceWord) && !(hasRenewableSaleWord && !hasCivilActionWord)) {
     candidates.push({ type: 'civil_service', confidence: 'high', reason: '한전ON 민원/FAQ/서류 표현 감지' });
   }
   if (hasEvChargingWord) {

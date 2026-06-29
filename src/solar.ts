@@ -40,6 +40,7 @@ export interface SolarRegionResult {
   };
   suitability: 'good' | 'moderate' | 'needs_data';
   answerSummary: string;
+  userFacingSummary: string[];
   clarifyingQuestions: string[];
   recommendations: string[];
   requiredApis: ReturnType<typeof getPublicApis>;
@@ -107,6 +108,11 @@ export function checkSolarRegion(input: SolarRegionInput): SolarRegionResult {
       parsed,
       suitability: 'needs_data',
       answerSummary: buildUnavailableApiMessage('태양광 지역 진단', ['S1', 'S2', 'S3', 'S4', 'K1']),
+      userFacingSummary: [
+        `${parsed.solarCapacityKw}kW 태양광 조건은 확인했습니다.`,
+        '발전량 계산에는 kw당 하루 발전량 또는 평균 일사시간이 필요합니다.',
+        '공공 API 연동 전에는 임의 일사량을 사용하지 않습니다.'
+      ],
       clarifyingQuestions: ['지역/좌표와 kw당 하루 발전량 또는 평균 일사시간을 알려주세요.'],
       recommendations: [
         '태양광 기능은 임의 일사량/발전량을 넣지 않습니다.',
@@ -153,6 +159,11 @@ export function checkSolarRegion(input: SolarRegionInput): SolarRegionResult {
     billSaving,
     suitability,
     answerSummary: `${parsed.solarCapacityKw}kW 태양광 기준 월 예상 발전량은 약 ${expectedMonthlyGenerationKwh}kWh입니다. 입지 간단 판정은 ${suitabilityText}입니다.`,
+    userFacingSummary: [
+      `월 예상 발전량: 약 ${expectedMonthlyGenerationKwh}kWh`,
+      `입지 간단 판정: ${suitabilityText}`,
+      billSaving ? `단순 요금 절감액: 약 ${billSaving.estimatedSavingWon.toLocaleString('ko-KR')}원` : '현재 월 사용량을 주면 절감액까지 계산 가능합니다.'
+    ],
     clarifyingQuestions: typeof parsed.currentMonthlyKwh === 'number' ? [] : ['현재 월 사용량(kWh)을 알려주면 전기요금 절감액까지 계산할 수 있습니다.'],
     recommendations: [
       billSaving

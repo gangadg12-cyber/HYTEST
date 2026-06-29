@@ -209,6 +209,9 @@ assert.ok(evPlan.userFacingSummary.length > 0);
 
 const ioniqConnector = inferEvConnectorFromVehicleModel('아이오닉5로 충전소 찾아줘');
 assert.equal(ioniqConnector?.connectorType, 'DC콤보');
+assert.equal(inferEvConnectorFromVehicleModel('포터2 EV 충전소 찾아줘')?.connectorType, 'DC콤보');
+assert.equal(inferEvConnectorFromVehicleModel('신형 레이 EV 급속 충전')?.connectorType, 'DC콤보');
+assert.equal(inferEvConnectorFromVehicleModel('레이EV 구형 차데모 충전소')?.connectorType, 'CHAdeMO');
 
 const evPlanByVehicleModel = planEvChargingVisit({
   text: '아이오닉5로 서울 강남구 근처 급속 충전소 찾아줘',
@@ -293,6 +296,7 @@ const weatherUnavailable = await adviseWeatherPowerUsage({
 });
 assert.equal(weatherUnavailable.dataMode, 'unavailable');
 assert.equal(weatherUnavailable.riskLevel, 'unknown');
+assert.ok(weatherUnavailable.userFacingSummary.length > 0);
 assert.ok(weatherUnavailable.clarifyingQuestions.length > 0);
 
 const weatherProvided = await adviseWeatherPowerUsage({
@@ -306,6 +310,7 @@ const weatherProvided = await adviseWeatherPowerUsage({
 });
 assert.equal(weatherProvided.dataMode, 'user_provided');
 assert.equal(weatherProvided.riskLevel, 'high');
+assert.ok(weatherProvided.userFacingSummary.length > 0);
 assert.ok(typeof weatherProvided.billScenario?.increaseWon === 'number');
 
 const publicWeatherApis = getPublicApis({ feature: 'weather_power_advisor' });
@@ -317,6 +322,7 @@ const renewableUnavailable = await analyzeRenewableEnergySale({
   useLiveApi: false
 });
 assert.equal(renewableUnavailable.dataMode, 'unavailable');
+assert.ok(renewableUnavailable.userFacingSummary.length > 0);
 assert.ok(renewableUnavailable.clarifyingQuestions.length > 0);
 
 const renewableProvided = await analyzeRenewableEnergySale({
@@ -329,10 +335,12 @@ const renewableProvided = await analyzeRenewableEnergySale({
 });
 assert.equal(renewableProvided.dataMode, 'user_provided');
 assert.equal(renewableProvided.revenueEstimate?.estimatedAnnualRevenueWon, 29120000);
+assert.ok(renewableProvided.userFacingSummary.some((line) => line.includes('예상 연 매출')));
 
 const homeUsageUnavailable = compareHomeElectricityUsage({ monthlyKwh: 420 });
 assert.equal(homeUsageUnavailable.dataMode, 'unavailable');
 assert.equal(homeUsageUnavailable.comparison, undefined);
+assert.ok(homeUsageUnavailable.userFacingSummary.length > 0);
 assert.ok(homeUsageUnavailable.clarifyingQuestions.length > 0);
 
 const homeUsageProvided = compareHomeElectricityUsage({
@@ -342,11 +350,13 @@ const homeUsageProvided = compareHomeElectricityUsage({
 });
 assert.equal(homeUsageProvided.dataMode, 'user_provided');
 assert.equal(homeUsageProvided.comparison?.level, 'very_high');
+assert.ok(homeUsageProvided.userFacingSummary.length > 0);
 assert.ok(homeUsageProvided.answerSummary.includes('420'));
 
 const solarUnavailable = checkSolarRegion({ solarCapacityKw: 3, currentMonthlyKwh: 420 });
 assert.equal(solarUnavailable.dataMode, 'unavailable');
 assert.equal(solarUnavailable.suitability, 'needs_data');
+assert.ok(solarUnavailable.userFacingSummary.length > 0);
 assert.ok(solarUnavailable.clarifyingQuestions.length > 0);
 
 const solarProvided = checkSolarRegion({
@@ -356,6 +366,7 @@ const solarProvided = checkSolarRegion({
 });
 assert.equal(solarProvided.dataMode, 'user_provided');
 assert.equal(solarProvided.generation?.expectedMonthlyGenerationKwh, 315);
+assert.ok(solarProvided.userFacingSummary.length > 0);
 assert.ok(typeof solarProvided.billSaving?.estimatedSavingWon === 'number');
 
 const routedBillAndEv = await handleElectricLifeRequest({
@@ -379,6 +390,12 @@ const routedCivilAndRenewable = await handleElectricLifeRequest({
 assert.ok(routedCivilAndRenewable.intents.some((intent) => intent.type === 'renewable_sale'));
 assert.ok(routedCivilAndRenewable.intents.some((intent) => intent.type === 'civil_service'));
 assert.ok(routedCivilAndRenewable.userFacingSummary.length > 0);
+
+const routedEvCivilService = await handleElectricLifeRequest({
+  text: '전기차 충전소 사용량 제출 민원은 한전ON 어디서 해?',
+  useLiveApi: false
+});
+assert.ok(routedEvCivilService.intents.some((intent) => intent.type === 'civil_service'));
 
 assert.equal(ROUTER_REGRESSION_QUESTIONS.length, 50);
 for (const question of ROUTER_REGRESSION_QUESTIONS) {

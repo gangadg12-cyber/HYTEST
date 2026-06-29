@@ -36,6 +36,7 @@ export interface WeatherPowerAdvisorResult {
   };
   riskLevel: 'low' | 'medium' | 'high' | 'unknown';
   answerSummary: string;
+  userFacingSummary: string[];
   billScenario?: ReturnType<typeof estimateBill>;
   clarifyingQuestions: string[];
   recommendations: string[];
@@ -219,6 +220,10 @@ export async function adviseWeatherPowerUsage(input: WeatherPowerAdvisorInput): 
       liveApi,
       riskLevel,
       answerSummary: buildUnavailableApiMessage('날씨 기반 전기요금/절약 조언', ['W1', 'W3', 'K1']),
+      userFacingSummary: [
+        '날씨 기반 전기요금 조언을 위해 위치/격자 또는 현재 기온 정보가 필요합니다.',
+        '기상 API 또는 사용자 입력 날씨값 없이 임의 위험도를 만들지 않습니다.'
+      ],
       clarifyingQuestions: ['지역명 또는 기상청 격자 좌표(nx, ny), 현재/예보 기온, 특보 정보를 알려주세요.'],
       recommendations: [
         '위치 격자(nx, ny)와 기상청 API 키를 설정하거나, 현재 기온/특보 정보를 직접 입력해야 합니다.',
@@ -252,6 +257,13 @@ export async function adviseWeatherPowerUsage(input: WeatherPowerAdvisorInput): 
     liveApi,
     riskLevel,
     answerSummary: `현재 조건의 전기 사용 위험도는 ${riskText}입니다.${typeof temperatureC === 'number' ? ` 기준 기온은 ${temperatureC}도입니다.` : ''}`,
+    userFacingSummary: [
+      `전기 사용 위험도: ${riskText}`,
+      typeof temperatureC === 'number' ? `기준 기온: ${temperatureC}도` : `특보/날씨 조건: ${parsed.alertType}`,
+      billScenario?.increaseWon
+        ? `입력 사용량 기준 추가요금: 약 ${billScenario.increaseWon.toLocaleString('ko-KR')}원`
+        : '현재 월 사용량을 주면 추가요금까지 계산 가능합니다.'
+    ],
     billScenario,
     clarifyingQuestions: typeof parsed.baseMonthlyKwh === 'number' ? [] : ['현재 월 사용량(kWh)을 알려주면 날씨 조건에 따른 추가요금까지 계산할 수 있습니다.'],
     recommendations: [
