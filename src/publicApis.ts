@@ -173,7 +173,8 @@ export const PUBLIC_API_CATALOG: PublicApiDefinition[] = [
     credentialNames: ['EV_CHARGER_SERVICE_KEY', 'DATA_GO_KR_SERVICE_KEY'],
     runtimeStatus: 'implemented',
     usedFor: ['zcode 기반 충전소 정보 조회', '충전기 타입', '현재 상태 병합', '좌표/거리 기반 내부 후보 랭킹'],
-    mvpBoundary: '공공 API는 주소/좌표 직접 검색이 아니라 지역코드 기반 조회입니다. MCP가 카카오 위치 API로 좌표를 잡고, 조회 결과를 거리/커넥터/출력 조건으로 내부 필터링합니다. 실제 예약 확정은 충전사업자 연계가 필요합니다.'
+    mvpBoundary:
+      '공공 API는 주소/좌표 직접 검색이 아니라 지역코드 기반 조회입니다. MCP가 카카오 위치 API로 좌표를 잡고, 조회 결과를 거리/커넥터/출력 조건으로 내부 필터링합니다. 외부 API가 타임아웃/무응답이면 임의 후보를 만들지 않고 unavailable로 반환합니다. 실제 예약 확정은 충전사업자 연계가 필요합니다.'
   },
   {
     code: 'W1',

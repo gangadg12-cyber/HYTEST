@@ -62,6 +62,22 @@ function inferSeason(): Season {
   return month === 7 || month === 8 ? 'summer' : 'other';
 }
 
+function parseCurrentMonthlyKwh(text: string): number | undefined {
+  const normalized = text.replace(/,/g, '');
+  return numberFrom(normalized, [
+    /(?:현재|우리집|월|한달|이번달|지난달|사용량|전기)\s*(?:전기)?\s*(?:사용량)?\s*(?:이|은|는|가)?\s*(\d+(?:\.\d+)?)\s*kwh/i,
+    /(\d+(?:\.\d+)?)\s*kwh\s*(?:쓰|사용|나오|썼|쓴|정도\s*쓰)/i
+  ]);
+}
+
+function isGenerationPerKwValue(text: string, value?: number): boolean {
+  if (typeof value !== 'number') {
+    return false;
+  }
+  const escapedValue = String(value).replace('.', '\\.');
+  return new RegExp(`(?:kw당|1kw당)\\s*${escapedValue}\\s*kwh`, 'i').test(text);
+}
+
 function parseSolarInput(input: SolarRegionInput): SolarRegionResult['parsed'] {
   const text = input.text ?? '';
   const solarCapacityKw =
@@ -71,24 +87,27 @@ function parseSolarInput(input: SolarRegionInput): SolarRegionResult['parsed'] {
       /(\d+(?:\.\d+)?)\s*킬로와트/
     ]) ??
     3;
+  const averageDailyGenerationKwhPerKw =
+    input.averageDailyGenerationKwhPerKw ??
+    numberFrom(text, [
+      /kw당\s*(\d+(?:\.\d+)?)\s*kwh/i,
+      /1kw당\s*(\d+(?:\.\d+)?)/
+    ]);
+  const rawCurrentMonthlyKwh = input.currentMonthlyKwh ?? parseCurrentMonthlyKwh(text);
+  const currentMonthlyKwh = isGenerationPerKwValue(text, rawCurrentMonthlyKwh) ? undefined : rawCurrentMonthlyKwh;
   return {
     region: input.region,
     latitude: input.latitude,
     longitude: input.longitude,
     solarCapacityKw,
-    averageDailyGenerationKwhPerKw:
-      input.averageDailyGenerationKwhPerKw ??
-      numberFrom(text, [
-        /kw당\s*(\d+(?:\.\d+)?)\s*kwh/i,
-        /1kw당\s*(\d+(?:\.\d+)?)/
-      ]),
+    averageDailyGenerationKwhPerKw,
     averageDailySunHours:
       input.averageDailySunHours ??
       numberFrom(text, [
         /일사(?:량|시간).*?(\d+(?:\.\d+)?)/,
         /하루\s*(\d+(?:\.\d+)?)\s*시간.*?태양/
       ]),
-    currentMonthlyKwh: input.currentMonthlyKwh ?? numberFrom(text.replace(/,/g, ''), [/(\d+(?:\.\d+)?)\s*kwh/i]),
+    currentMonthlyKwh,
     voltageType: input.voltageType ?? 'low_voltage',
     season: input.season ?? inferSeason()
   };

@@ -625,20 +625,16 @@ export function estimateBill(input: BillEstimateInput): BillEstimateResult {
         ...result.recommendations
       ];
     } else {
-      result.marginalScenarios = [200, 300, 400, 500].map((base) => {
-        const before = calculateResidentialBill({ monthlyKwh: base, voltageType: parsed.voltageType, season: parsed.season });
-        const afterMonthlyKwh = Math.max(0, base + additionalMonthlyKwh);
-        const after = calculateResidentialBill({
-          monthlyKwh: afterMonthlyKwh,
-          voltageType: parsed.voltageType,
-          season: parsed.season
-        });
-        return {
-          assumedBaseMonthlyKwh: base,
-          afterMonthlyKwh: Number(afterMonthlyKwh.toFixed(3)),
-          estimatedIncreaseWon: after.estimatedTotalWon - before.estimatedTotalWon
-        };
-      });
+      result.clarifyingQuestions = Array.from(
+        new Set([
+          ...result.clarifyingQuestions,
+          '현재 또는 전월 월 사용량(kWh)을 알려주세요. 누진 구간 때문에 기준 사용량이 있어야 정확한 증가 요금을 계산할 수 있습니다.'
+        ])
+      );
+      result.recommendations = [
+        '기준 월 사용량이 없으면 추가 kWh만 확정하고 요금 증가액은 확정하지 않습니다.',
+        ...result.recommendations
+      ];
     }
   }
 

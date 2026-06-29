@@ -447,6 +447,7 @@ export function getKepcoIntegrationStatus(): {
   availableNow: string[];
   needsKepcoOrUserAuth: string[];
   needsPartnerAgreement: string[];
+  apiOperationalNotes: string[];
   suggestedMvpFlow: string[];
   dataSources: typeof OFFICIAL_DATA_SOURCES;
   publicApis: ReturnType<typeof getPublicApis>;
@@ -468,7 +469,7 @@ export function getKepcoIntegrationStatus(): {
       '한전ON 제출 전 신청/문의 문안 작성',
       '한전ON 공식 메뉴 링크 연결',
       '카카오 로컬 API로 장소명/주소를 좌표로 변환',
-      '공공데이터포털 전기차 충전소 API 또는 사용자가 제공한 충전소 후보 기반 도착시점 방문 플랜 생성',
+      'EV 충전 방문 플랜은 카카오 위치변환과 공공데이터포털 전기차 충전소 API를 시도하되, API 응답 실패 시 임의 후보 없이 unavailable로 반환',
       '한전 전력데이터개방포털 API 기반 신재생 계약현황/분산전원 연계정보 조회',
       '신재생 발전 판매를 위한 SMP/REC 수익 산식과 입력값 체크리스트 생성',
       '한전 가구평균 전력사용량 API 기반 우리집 사용량 평균 비교',
@@ -490,6 +491,10 @@ export function getKepcoIntegrationStatus(): {
       '예약자 외 충전 차단 또는 원격 인증',
       '충전 결제 및 회원 연동',
       '차량 제조사 배터리/도착예정시간 연동'
+    ],
+    apiOperationalNotes: [
+      'EV 충전소 API는 키/엔드포인트가 구성되어 있어도 외부 공공 API가 타임아웃 또는 무응답이면 실시간 후보를 반환하지 않습니다.',
+      '현재 MVP는 외부 API 실패 시 데모 충전소를 대신 만들지 않고 실패 사유와 추가 확인 정보를 반환합니다.'
     ],
     suggestedMvpFlow: [
       '사용자 자연어 입력',
