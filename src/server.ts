@@ -82,7 +82,7 @@ function createServer(): McpServer {
     },
     {
       instructions:
-        'Use KEPCO Electric Agent tools as an API-first Korean electricity life assistant. For broad, ambiguous, or multi-part Korean requests about electricity bills, KEPCO civil services, EV charging, solar, renewable sale, weather/power risk, or public API readiness, prefer handle_electric_life_request first so the server can split and orchestrate intents. For single-purpose questions, the specialized tools may be called directly. If a public API is unavailable, return the tool result as unavailable instead of inventing arbitrary data. Do not claim to submit KEPCO civil-service requests, payment, auto-transfer, or confirmed EV charger reservations unless an authenticated partner integration is added.'
+        'Use KEPCO Electric Agent tools as an API-first Korean electricity life assistant. Do not answer supported electricity-domain questions from general model memory alone. If the user mentions electricity bills, usage comparison, KEPCO/한전ON civil services, EV charging, charger connectors, solar, renewable sale, REC, SMP, PPA, 상계거래, 분산전원, 계통연계, weather/power risk, or public API readiness, call a tool first. For broad, ambiguous, underspecified, or multi-part Korean requests, call handle_electric_life_request first so the server can split intents and return clarifyingQuestions/nextQuestions. Missing location, missing vehicle model, missing generation amount, missing SMP/REC price, or missing weather data is not a reason to skip tools; call the relevant tool and return its clarifying questions. If a public API is unavailable, return the tool result as unavailable instead of inventing arbitrary data. Do not claim to submit KEPCO civil-service requests, payment, auto-transfer, or confirmed EV charger reservations unless an authenticated partner integration is added.'
     }
   );
 
@@ -91,7 +91,7 @@ function createServer(): McpServer {
     {
       title: 'Handle Electric Life Request',
       description:
-        'Preferred entry point for broad, ambiguous, or multi-part Korean electricity-life requests. Use when the user mixes questions such as bill calculation, usage comparison, KEPCO civil service/FAQ/form draft, EV charging station visit planning, solar/renewable sale, REC/SMP, weather-based power advice, or home usage comparison in one message. The server splits intents, runs internal domain logic, returns one combined structured result, and lists clarifying questions when needed.',
+        'Preferred entry point for broad, ambiguous, underspecified, or multi-part Korean electricity-life requests. Use this before answering when the user mixes questions such as bill calculation, usage comparison, KEPCO civil service/FAQ/form draft, EV charging station visit planning, solar/renewable sale, REC/SMP/PPA/상계거래/분산전원, weather-based power advice, or home usage comparison in one message. Also use it when required details are missing: it returns nextQuestions instead of forcing the model to ask from memory. The server splits intents, runs internal domain logic, returns one combined structured result, and lists clarifying questions when needed.',
       inputSchema: {
         text: z.string().min(2).max(3000).describe('Original Korean natural-language user request. Can contain multiple questions.'),
         locationText: z.string().min(1).max(200).optional().describe('Optional common location text used for EV, weather, solar, or renewable sale routing.'),
@@ -294,7 +294,7 @@ function createServer(): McpServer {
     {
       title: 'Advise Weather Power Usage',
       description:
-        'Use for weather-based electricity advice such as 폭염 냉방비, 한파 전기난방, 피크 시간대, or weather-related bill risk. Calls KMA public API when KMA_SHORT_FORECAST_SERVICE_KEY/DATA_GO_KR_SERVICE_KEY and nx/ny are available; if locationText is provided, it can resolve coordinates through Kakao Local first. Otherwise requires user-provided weather data.',
+        'Use for weather-based electricity advice such as 폭염 냉방비, 한파 전기난방, 장마 제습기, 피크 시간대, or weather-related bill risk. Call this even when location/weather data is missing; the tool returns clarifyingQuestions/unavailable instead of inventing weather. When appliance wattage and hours are present, it also returns an electricity bill scenario or marginal bill scenarios, so it can handle "한파에 1800W 히터 하루 5시간 쓰면 부담 봐줘". Calls KMA public API when KMA_SHORT_FORECAST_SERVICE_KEY/DATA_GO_KR_SERVICE_KEY and nx/ny are available; if locationText is provided, it can resolve coordinates through Kakao Local first. Otherwise requires user-provided weather data.',
       inputSchema: {
         text: z.string().min(2).max(2000).optional().describe('Natural-language weather/power question.'),
         locationText: z.string().min(1).max(160).optional().describe('Optional location text. KMA API still needs nx/ny unless geocoding is added.'),
@@ -325,7 +325,7 @@ function createServer(): McpServer {
     {
       title: 'Check Solar Region',
       description:
-        'Use for solar or renewable questions such as "태양광 설치하면 우리 지역 괜찮아?", "3kW 태양광이면 요금 얼마나 줄어?", or "전기차랑 태양광 같이 쓰면 이득이야?". It is API-first and returns unavailable unless public solar API data or user-provided generation/sun-hour assumptions are available.',
+        'Use for solar/photovoltaic questions such as "태양광 설치하면 우리 지역 괜찮아?", "3kW 태양광이면 요금 얼마나 줄어?", "kw당 하루 3.8kWh라면 4kW 월 발전량 계산", "패널 설치 전 일사량 기준 입지 체크", or "전기차랑 태양광 같이 쓰면 이득이야?". Call this even when region, sun-hour, or generation data is missing; the tool returns clarifyingQuestions/unavailable instead of letting the model ask from memory. It is API-first and returns unavailable unless public solar API data or user-provided generation/sun-hour assumptions are available.',
       inputSchema: {
         text: z.string().min(2).max(2000).optional().describe('Natural-language solar question.'),
         region: z.string().min(1).max(100).optional().describe('Optional region.'),
@@ -354,7 +354,7 @@ function createServer(): McpServer {
     {
       title: 'Analyze Renewable Energy Sale',
       description:
-        'Use when the user asks about selling electricity from solar/renewable generation, 남는 전기 판매, 태양광 판매, REC, SMP, PPA, 요금상계거래, 발전사업, grid interconnection, 계통연계, 분산전원, renewable contract status, or whether a location is suitable for renewable power sale. Calls KEPCO Bigdata APIs for common codes, renewable contracts, and dispersed generation when KEPCO_BIGDATA_API_KEY is configured. Uses user-provided SMP/REC or configured KPX endpoints without inventing prices.',
+        'Use when the user asks about selling electricity from solar/renewable generation, 남는 전기 판매, 태양광 판매, REC, SMP, PPA, 요금상계거래, 발전사업, grid interconnection, 계통연계, 분산전원, renewable contract status, or whether a location is suitable for renewable power sale. Also use this for concept/explanation-only questions such as "REC랑 SMP가 뭐야?", "PPA랑 상계거래 차이", or "분산전원 연계 여유용량 조회에 주소를 어디까지 넣어?". Call this even when expected generation, location, SMP, or REC price is missing; it returns concept guidance and clarifyingQuestions. Calls KEPCO Bigdata APIs for common codes, renewable contracts, and dispersed generation when KEPCO_BIGDATA_API_KEY is configured. Uses user-provided SMP/REC or configured KPX endpoints without inventing prices.',
       inputSchema: {
         text: z.string().min(2).max(2000).optional().describe('Natural-language renewable sale question.'),
         locationText: z.string().min(1).max(200).optional().describe('Installation/sale location such as address, city, district, or place name.'),
@@ -526,7 +526,7 @@ function createServer(): McpServer {
     {
       title: 'Plan EV Charging Visit',
       description:
-        'Use for EV charging route/visit planning such as "서울 강남구 근처 충전소 찾아줘", "위도/경도 주변 DC콤보 찾아줘", "30분 뒤 덕평휴게소 근처에서 40kWh 충전하고 싶어", or "차데모 충전소만 찾아줘". When locationText/zcode/zscode/coordinates are provided and EV_CHARGER_SERVICE_KEY is configured, it calls the public KECO EV charger API for real charger location/status candidates, then builds plan A/B. If the public API fails or returns no matching candidates, report that failure instead of inventing replacement chargers. It clearly separates status-based visit planning from real reservation confirmation.',
+        'Use for EV charging route/visit planning, connector matching, and missing-info clarification such as "서울 강남구 근처 충전소 찾아줘", "위도/경도 주변 DC콤보 찾아줘", "모델Y DC콤보 되는 충전기 위주로 플랜A 플랜B", "구형 레이EV 차데모 충전소만", "대전 가는 길에 100kW 이상 급속 충전소", "30분 뒤 덕평휴게소 근처에서 40kWh 충전하고 싶어", or "차데모 충전소만 찾아줘". Call this even when location/route is missing; the tool returns clarifyingQuestions instead of letting the model ask without MCP. Do not invent connectorType when the user did not provide a vehicle model or connector. When locationText/zcode/zscode/coordinates are provided and EV_CHARGER_SERVICE_KEY is configured, it calls the public KECO EV charger API for real charger location/status candidates, then builds plan A/B. If the public API fails or returns no matching candidates, report that failure instead of inventing replacement chargers. It clearly separates status-based visit planning from real reservation confirmation.',
       inputSchema: {
         text: z.string().min(2).max(2000).optional().describe('Natural-language EV charging request.'),
         origin: z.string().min(1).max(120).optional().describe('Optional origin.'),

@@ -239,16 +239,14 @@ export async function adviseWeatherPowerUsage(input: WeatherPowerAdvisorInput): 
   const powerW = input.powerW ?? (parsed.alertType === 'cold_wave' ? 2000 : 1500);
   const hoursPerDay = input.hoursPerDay ?? (riskLevel === 'high' ? 8 : riskLevel === 'medium' ? 5 : 3);
   const daysPerMonth = input.daysPerMonth ?? 30;
-  const billScenario =
-    typeof parsed.baseMonthlyKwh === 'number'
-      ? estimateBill({
-          applianceName,
-          powerW,
-          hoursPerDay,
-          daysPerMonth,
-          baseMonthlyKwh: parsed.baseMonthlyKwh
-        })
-      : undefined;
+  const billScenario = estimateBill({
+    applianceName,
+    powerW,
+    hoursPerDay,
+    daysPerMonth,
+    baseMonthlyKwh: parsed.baseMonthlyKwh
+  });
+  const marginalScenario = billScenario.marginalScenarios?.[1] ?? billScenario.marginalScenarios?.[0];
 
   const riskText = riskLevel === 'high' ? '높음' : riskLevel === 'medium' ? '보통' : '낮음';
   return {
@@ -262,17 +260,24 @@ export async function adviseWeatherPowerUsage(input: WeatherPowerAdvisorInput): 
       typeof temperatureC === 'number' ? `기준 기온: ${temperatureC}도` : `특보/날씨 조건: ${parsed.alertType}`,
       billScenario?.increaseWon
         ? `입력 사용량 기준 추가요금: 약 ${billScenario.increaseWon.toLocaleString('ko-KR')}원`
-        : '현재 월 사용량을 주면 추가요금까지 계산 가능합니다.'
+        : marginalScenario
+          ? `기준 사용량 ${marginalScenario.assumedBaseMonthlyKwh}kWh 가정 시 추가요금: 약 ${marginalScenario.estimatedIncreaseWon.toLocaleString('ko-KR')}원`
+          : '현재 월 사용량을 주면 추가요금까지 계산 가능합니다.'
     ],
     billScenario,
-    clarifyingQuestions: typeof parsed.baseMonthlyKwh === 'number' ? [] : ['현재 월 사용량(kWh)을 알려주면 날씨 조건에 따른 추가요금까지 계산할 수 있습니다.'],
+    clarifyingQuestions:
+      typeof parsed.baseMonthlyKwh === 'number'
+        ? []
+        : ['현재 월 사용량(kWh)을 알려주면 누진구간을 반영한 추가요금을 더 정확히 계산할 수 있습니다.'],
     recommendations: [
       riskLevel === 'high'
         ? '피크 시간대에는 설정온도 조정, 선풍기 병행, 예약 운전, 필터 청소처럼 사용시간을 줄이는 조치가 우선입니다.'
         : '현재는 과도한 위험 구간은 아니지만, 누진구간 진입 여부를 같이 확인하는 것이 좋습니다.',
       billScenario?.increaseWon
         ? `입력 사용량 기준 추가요금은 약 ${billScenario.increaseWon.toLocaleString('ko-KR')}원으로 추정됩니다.`
-        : '현재 월 사용량을 입력하면 날씨 조건에 따른 추가요금까지 계산할 수 있습니다.'
+        : marginalScenario
+          ? `현재 월 사용량이 없어서 ${marginalScenario.assumedBaseMonthlyKwh}kWh 기준 추가요금 약 ${marginalScenario.estimatedIncreaseWon.toLocaleString('ko-KR')}원을 예시로 제시했습니다.`
+          : '현재 월 사용량을 입력하면 날씨 조건에 따른 추가요금까지 계산할 수 있습니다.'
     ],
     requiredApis,
     apiReadiness,

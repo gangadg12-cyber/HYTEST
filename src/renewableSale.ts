@@ -405,6 +405,29 @@ function buildRevenueEstimate(parsed: RenewableSaleResult['parsed']): RenewableS
   };
 }
 
+function buildRenewableConceptLines(text?: string): string[] {
+  if (!text) {
+    return [];
+  }
+  const lines: string[] = [];
+  if (/rec/i.test(text)) {
+    lines.push('REC는 신재생에너지 공급인증서로, 발전량의 환경가치를 인증해 별도로 거래하는 수익 요소입니다.');
+  }
+  if (/smp/i.test(text)) {
+    lines.push('SMP는 계통한계가격으로, 전력시장에 판매되는 전력량(kWh)에 적용되는 전력 판매 단가입니다.');
+  }
+  if (/ppa/i.test(text)) {
+    lines.push('PPA는 발전사업자와 전력 구매자가 전력 구매 조건을 계약으로 정하는 방식입니다.');
+  }
+  if (/상계거래|요금상계/.test(text)) {
+    lines.push('상계거래는 생산 전력을 자가소비 또는 사용요금 차감 구조로 처리하는 방식이라, 전력 판매 계약과 구분됩니다.');
+  }
+  if (/분산전원|계통|연계|여유용량/.test(text)) {
+    lines.push('분산전원 연계 검토는 설치 예정 주소를 시도, 시군구, 동/면, 리, 지번 또는 변전소 코드 수준으로 좁혀야 정확도가 올라갑니다.');
+  }
+  return Array.from(new Set(lines)).slice(0, 5);
+}
+
 function buildRenewableClarifyingQuestions(parsed: RenewableSaleResult['parsed'], hasRevenueEstimate: boolean): string[] {
   const questions: string[] = [];
   if (!parsed.locationText && !parsed.metroCd) {
@@ -426,11 +449,13 @@ function buildRenewableClarifyingQuestions(parsed: RenewableSaleResult['parsed']
 
 function buildRenewableSummary(input: {
   parsed: RenewableSaleResult['parsed'];
+  conceptLines: string[];
   revenueEstimate?: RenewableSaleResult['revenueEstimate'];
   renewableContracts?: ReturnType<typeof summarizeRenewableContracts>;
   dispersedGeneration?: ReturnType<typeof summarizeDispersedGeneration>;
 }): string {
   const parts: string[] = [];
+  parts.push(...input.conceptLines);
   if (input.revenueEstimate) {
     parts.push(
       `${input.parsed.generationSource} 연 발전량 ${input.parsed.expectedAnnualGenerationKwh}kWh 기준 예상 연 매출은 약 ${input.revenueEstimate.estimatedAnnualRevenueWon.toLocaleString('ko-KR')}원입니다.`
@@ -453,12 +478,14 @@ function buildRenewableSummary(input: {
 
 function buildRenewableUserFacingSummary(input: {
   parsed: RenewableSaleResult['parsed'];
+  conceptLines: string[];
   revenueEstimate?: RenewableSaleResult['revenueEstimate'];
   renewableContracts?: ReturnType<typeof summarizeRenewableContracts>;
   dispersedGeneration?: ReturnType<typeof summarizeDispersedGeneration>;
   clarifyingQuestions: string[];
 }): string[] {
   const summary: string[] = [];
+  summary.push(...input.conceptLines.slice(0, 2));
   if (input.revenueEstimate) {
     summary.push(`예상 연 매출: 약 ${input.revenueEstimate.estimatedAnnualRevenueWon.toLocaleString('ko-KR')}원`);
     summary.push(
@@ -557,6 +584,7 @@ export async function analyzeRenewableEnergySale(input: RenewableSaleInput): Pro
   const renewableSummary = renewableContracts ? summarizeRenewableContracts(renewableContracts) : undefined;
   const dispersedSummary = dispersedGeneration ? summarizeDispersedGeneration(dispersedGeneration) : undefined;
   const clarifyingQuestions = buildRenewableClarifyingQuestions(enrichedParsed, Boolean(revenueEstimate));
+  const conceptLines = buildRenewableConceptLines(input.text);
 
   return {
     dataMode,
@@ -572,12 +600,14 @@ export async function analyzeRenewableEnergySale(input: RenewableSaleInput): Pro
     revenueEstimate,
     answerSummary: buildRenewableSummary({
       parsed: enrichedParsed,
+      conceptLines,
       revenueEstimate,
       renewableContracts: renewableSummary,
       dispersedGeneration: dispersedSummary
     }),
     userFacingSummary: buildRenewableUserFacingSummary({
       parsed: enrichedParsed,
+      conceptLines,
       revenueEstimate,
       renewableContracts: renewableSummary,
       dispersedGeneration: dispersedSummary,
