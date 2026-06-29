@@ -166,8 +166,12 @@ function extractClarifyingQuestions(result: unknown): string[] {
     return [];
   }
   const record = result as Record<string, unknown>;
-  const questions: string[] = [];
+  const clarifyingQuestions = record.clarifyingQuestions;
+  if (Array.isArray(clarifyingQuestions)) {
+    return unique(clarifyingQuestions.map(String)).filter(Boolean);
+  }
 
+  const questions: string[] = [];
   const parsed = record.parsed;
   if (parsed && typeof parsed === 'object') {
     const missingFields = (parsed as Record<string, unknown>).missingFields;

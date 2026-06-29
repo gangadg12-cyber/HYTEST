@@ -36,6 +36,7 @@ export interface HomeUsageCompareResult {
     benchmarkBillWon?: number;
   };
   answerSummary: string;
+  clarifyingQuestions: string[];
   recommendations: string[];
   requiredApis: ReturnType<typeof getPublicApis>;
   apiReadiness: ReturnType<typeof getApiReadiness>;
@@ -114,6 +115,7 @@ export function compareHomeElectricityUsage(input: HomeUsageCompareInput): HomeU
       dataMode: 'unavailable',
       parsed,
       answerSummary: '비교할 월 사용량(kWh)이 필요합니다.',
+      clarifyingQuestions: ['비교할 월 사용량(kWh)을 알려주세요.'],
       recommendations: ['예: "우리집 420kWh 썼는데 평균보다 많아?"처럼 월 사용량을 같이 입력해 주세요.'],
       requiredApis,
       apiReadiness,
@@ -126,6 +128,7 @@ export function compareHomeElectricityUsage(input: HomeUsageCompareInput): HomeU
       dataMode: 'unavailable',
       parsed,
       answerSummary: buildUnavailableApiMessage('가구 평균 전력사용량 비교', ['K2', 'K3', 'K4']),
+      clarifyingQuestions: ['비교 기준이 되는 평균 월 사용량(kWh)을 알려주거나, 공공 평균 사용량 API 연동 후 다시 조회해 주세요.'],
       recommendations: [
         '현재는 임의 평균값을 넣지 않습니다.',
         '공공 API 연동 전 테스트하려면 benchmarkMonthlyKwh를 명시해 비교할 수 있습니다.',
@@ -172,6 +175,7 @@ export function compareHomeElectricityUsage(input: HomeUsageCompareInput): HomeU
       benchmarkBillWon: benchmarkBill.estimatedTotalWon
     },
     answerSummary: `${parsed.monthlyKwh}kWh는 ${benchmarkLabel} ${parsed.benchmarkMonthlyKwh}kWh 대비 ${Math.abs(differenceKwh)}kWh ${differenceKwh >= 0 ? '많고' : '적고'}, 약 ${Math.abs(differencePercent)}% ${differenceKwh >= 0 ? '높습니다' : '낮습니다'}. 판정은 ${levelText}입니다.`,
+    clarifyingQuestions: [],
     recommendations: [
       level === 'very_high' || level === 'high'
         ? '에어컨, 제습기, 전기난방, 건조기처럼 월 사용량을 크게 올리는 기기를 먼저 점검하세요.'

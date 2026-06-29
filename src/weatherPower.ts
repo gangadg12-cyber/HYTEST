@@ -37,6 +37,7 @@ export interface WeatherPowerAdvisorResult {
   riskLevel: 'low' | 'medium' | 'high' | 'unknown';
   answerSummary: string;
   billScenario?: ReturnType<typeof estimateBill>;
+  clarifyingQuestions: string[];
   recommendations: string[];
   requiredApis: ReturnType<typeof getPublicApis>;
   apiReadiness: ReturnType<typeof getApiReadiness>;
@@ -218,6 +219,7 @@ export async function adviseWeatherPowerUsage(input: WeatherPowerAdvisorInput): 
       liveApi,
       riskLevel,
       answerSummary: buildUnavailableApiMessage('날씨 기반 전기요금/절약 조언', ['W1', 'W3', 'K1']),
+      clarifyingQuestions: ['지역명 또는 기상청 격자 좌표(nx, ny), 현재/예보 기온, 특보 정보를 알려주세요.'],
       recommendations: [
         '위치 격자(nx, ny)와 기상청 API 키를 설정하거나, 현재 기온/특보 정보를 직접 입력해야 합니다.',
         '임의 날씨값은 사용하지 않습니다.'
@@ -251,6 +253,7 @@ export async function adviseWeatherPowerUsage(input: WeatherPowerAdvisorInput): 
     riskLevel,
     answerSummary: `현재 조건의 전기 사용 위험도는 ${riskText}입니다.${typeof temperatureC === 'number' ? ` 기준 기온은 ${temperatureC}도입니다.` : ''}`,
     billScenario,
+    clarifyingQuestions: typeof parsed.baseMonthlyKwh === 'number' ? [] : ['현재 월 사용량(kWh)을 알려주면 날씨 조건에 따른 추가요금까지 계산할 수 있습니다.'],
     recommendations: [
       riskLevel === 'high'
         ? '피크 시간대에는 설정온도 조정, 선풍기 병행, 예약 운전, 필터 청소처럼 사용시간을 줄이는 조치가 우선입니다.'

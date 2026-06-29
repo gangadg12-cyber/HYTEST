@@ -63,6 +63,7 @@ export interface BillEstimateResult {
     estimatedIncreaseWon: number;
   }>;
   usageFormula?: string;
+  clarifyingQuestions: string[];
   recommendations: string[];
   tariffBasis: {
     basisDate: string;
@@ -458,6 +459,10 @@ function buildRecommendations(parsed: ParsedUsageRequest, additionalKwh?: number
   return tips;
 }
 
+function buildClarifyingQuestionsFromMissingFields(missingFields: string[]): string[] {
+  return missingFields.map((field) => `${field}을(를) 알려주세요.`);
+}
+
 function formatWon(value: number): string {
   return `${value.toLocaleString('ko-KR')}원`;
 }
@@ -508,6 +513,7 @@ export function estimateBill(input: BillEstimateInput): BillEstimateResult {
   const result: BillEstimateResult = {
     parsed,
     additionalMonthlyKwh,
+    clarifyingQuestions: buildClarifyingQuestionsFromMissingFields(parsed.missingFields),
     recommendations: buildRecommendations(parsed, additionalMonthlyKwh),
     tariffBasis: {
       basisDate: tariff.basisDate,
@@ -603,6 +609,7 @@ export function compareUsageScenarios(input: {
     estimatedIncreaseWon: number;
   }>;
   baseAssumption?: string;
+  clarifyingQuestions: string[];
   recommendations: string[];
 } {
   const parsed = parseUsageRequest({
@@ -639,6 +646,7 @@ export function compareUsageScenarios(input: {
       scenarios: [],
       usageBillComparisons: comparisons,
       baseAssumption: `${parsed.billingMonth}월 ${parsed.voltageType === 'low_voltage' ? '주택용 저압' : '주택용 고압'} 기준 월 사용량별 요금 비교`,
+      clarifyingQuestions: [],
       recommendations: ['월 사용량 비교는 한전 주택용 요금표 기반 간이 추정이며, 복지할인/공동주택 계약방식/TV수신료 등은 별도입니다.']
     };
   }
@@ -667,6 +675,7 @@ export function compareUsageScenarios(input: {
         typeof parsed.baseMonthlyKwh === 'number'
           ? `기존 월 사용량 ${parsed.baseMonthlyKwh}kWh에서 ${changeKwh}kWh 변화`
           : `기존 월 사용량을 모르는 상태에서 ${changeKwh}kWh 변화분만 기준별로 비교`,
+      clarifyingQuestions: typeof parsed.baseMonthlyKwh === 'number' ? [] : ['현재 월 사용량(kWh)을 알려주면 실제 누진 구간 기준으로 계산할 수 있습니다.'],
       recommendations: ['현재 월 사용량을 함께 넣으면 실제 누진 구간에 맞춘 증가액을 더 정확히 계산할 수 있습니다.']
     };
   }
@@ -679,6 +688,7 @@ export function compareUsageScenarios(input: {
   if (typeof powerW !== 'number') {
     return {
       scenarios: [],
+      clarifyingQuestions: ['제품 소비전력(W 또는 kW)을 알려주세요.'],
       recommendations: ['소비전력(W 또는 kW)을 알려주면 사용시간별 요금 증가 시나리오를 계산할 수 있습니다.']
     };
   }
@@ -686,6 +696,7 @@ export function compareUsageScenarios(input: {
   if (dayScenarios && dayScenarios.length > 0 && typeof parsed.hoursPerDay !== 'number' && !input.scenarioHoursPerDay?.length) {
     return {
       scenarios: [],
+      clarifyingQuestions: ['하루 사용시간을 알려주세요.'],
       recommendations: ['사용일수별 비교에는 하루 사용시간이 필요합니다. 예: "1500W 제품을 하루 2시간씩 10일, 20일, 30일 비교해줘".']
     };
   }
@@ -734,6 +745,7 @@ export function compareUsageScenarios(input: {
       typeof parsed.baseMonthlyKwh === 'number'
         ? `기존 월 사용량 ${parsed.baseMonthlyKwh}kWh 기준`
         : '기존 월 사용량이 없어 kWh 증가량만 비교했습니다.',
+    clarifyingQuestions: [],
     recommendations: buildRecommendations(parsed)
   };
 }

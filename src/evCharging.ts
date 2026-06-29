@@ -103,6 +103,7 @@ export interface EvChargingPlanResult {
   planB?: EvChargingPlanCandidate;
   candidates: EvChargingPlanCandidate[];
   visitPlanText: string;
+  clarifyingQuestions: string[];
   reservationBoundary: {
     currentMvp: string;
     actualReservationRequires: string[];
@@ -847,6 +848,9 @@ function buildEvChargingPlan(
   const viable = scored.filter((candidate) => candidate.recommendation !== 'avoid');
   const planA = viable.find((candidate) => candidate.recommendation === 'plan_a') ?? viable[0];
   const planB = scored.find((candidate) => candidate.name !== planA?.name && candidate.recommendation !== 'avoid');
+  const clarifyingQuestions = planA
+    ? []
+    : ['충전소를 찾을 위치명 또는 zcode/좌표, 차량 커넥터 타입, 원하는 충전량(kWh)을 알려주세요.'];
 
   return {
     dataMode,
@@ -871,6 +875,7 @@ function buildEvChargingPlan(
     candidates: scored,
     liveApi,
     visitPlanText: buildVisitPlanText(parsed, dataMode, planA, planB),
+    clarifyingQuestions,
     reservationBoundary: {
       currentMvp:
         dataMode === 'live_public_api'
@@ -913,6 +918,11 @@ function buildUnavailableEvChargingPlan(
 ): EvChargingPlanResult {
   const parsed = parseText(input);
   const area = resolveEvArea(input);
+  const clarifyingQuestions = [
+    !input.locationText && !area.zcode && typeof input.latitude !== 'number' ? '충전소를 찾을 위치명, zcode 또는 좌표를 알려주세요.' : undefined,
+    !parsed.connectorType ? '차량 모델 또는 커넥터 타입(예: DC콤보, CHAdeMO, AC3상)을 알려주세요.' : undefined,
+    !parsed.desiredKwh ? '원하는 충전량(kWh)을 알려주면 방문 플랜을 더 정확히 만들 수 있습니다.' : undefined
+  ].filter((question): question is string => Boolean(question));
   return {
     dataMode: 'unavailable',
     parsed: {
@@ -934,6 +944,7 @@ function buildUnavailableEvChargingPlan(
     liveApi,
     candidates: [],
     visitPlanText: [message, buildVisitPlanText(parsed, 'unavailable')].join('\n'),
+    clarifyingQuestions,
     reservationBoundary: {
       currentMvp: '실시간 공공데이터 조회나 사용자 제공 후보가 없으면 임의 충전소를 추천하지 않습니다.',
       actualReservationRequires: [

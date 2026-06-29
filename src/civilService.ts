@@ -36,6 +36,7 @@ export interface CivilServiceGuideResult {
   requiredInputs: string[];
   likelyDocuments: string[];
   missingInputs: string[];
+  clarifyingQuestions: string[];
   nextSteps: string[];
   draftRequestText: string;
   officialLinks: typeof OFFICIAL_LINKS;
@@ -244,6 +245,10 @@ function makeDraftText(serviceType: CivilServiceType, input: CivilServiceInput):
   ].join('\n');
 }
 
+function buildClarifyingQuestions(missingInputs: string[]): string[] {
+  return missingInputs.map((field) => `${field}을(를) 알려주세요.`);
+}
+
 function mergeUnique(primary: string[], secondary: string[]): string[] {
   return Array.from(new Set([...primary, ...secondary]));
 }
@@ -314,6 +319,7 @@ export function guideCivilService(input: CivilServiceInput): CivilServiceGuideRe
     requiredInputs,
     likelyDocuments,
     missingInputs,
+    clarifyingQuestions: buildClarifyingQuestions(missingInputs),
     nextSteps: [
       missingInputs.length > 0 ? `먼저 보완할 정보: ${missingInputs.join(', ')}` : '필수 입력값 초안은 대부분 채워졌습니다.',
       bestItem ? `가장 가까운 한전ON 민원 항목: ${bestItem.category} > ${bestItem.labelKo}` : '민원 항목이 확실하지 않으면 한전ON 민원신청에서 다시 확인하세요.',
@@ -333,6 +339,7 @@ export function prepareApplicationDraft(input: CivilServiceInput): {
   matchedCivilServiceItems: CivilServiceMatch[];
   boundary: IntegrationBoundary;
   missingInputs: string[];
+  clarifyingQuestions: string[];
   confirmationChecklist: string[];
   draftRequestText: string;
   canSubmit: false;
@@ -358,6 +365,7 @@ export function prepareApplicationDraft(input: CivilServiceInput): {
     matchedCivilServiceItems: guide.matchedCivilServiceItems,
     boundary: guide.boundary,
     missingInputs: guide.missingInputs,
+    clarifyingQuestions: guide.clarifyingQuestions,
     confirmationChecklist: [
       '고객번호 또는 주소가 정확한지 확인',
       '신청자/계약자/납부자 정보가 실제 한전ON 인증 정보와 맞는지 확인',

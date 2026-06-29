@@ -109,6 +109,7 @@ const dryerMissingUsage = estimateBill({
 assert.equal(dryerMissingUsage.parsed.applianceName, '의류건조기');
 assert.equal(dryerMissingUsage.parsed.powerW, 1200);
 assert.ok(dryerMissingUsage.parsed.missingFields.includes('하루 사용시간'));
+assert.ok(dryerMissingUsage.clarifyingQuestions.some((question) => question.includes('하루 사용시간')));
 
 const scenarios = compareUsageScenarios({
   text: '월 350kWh 쓰고 에어컨 1800W를 비교해줘',
@@ -129,6 +130,7 @@ const missingDayScenarioHour = compareUsageScenarios({
   text: '1500W 제품을 10일, 20일, 30일 쓰는 경우 비교 가능해?'
 });
 assert.equal(missingDayScenarioHour.scenarios.length, 0);
+assert.ok(missingDayScenarioHour.clarifyingQuestions.some((question) => question.includes('하루 사용시간')));
 assert.ok(missingDayScenarioHour.recommendations[0]?.includes('하루 사용시간'));
 
 const catalog = listKepcoCivilServiceCatalog();
@@ -221,6 +223,7 @@ const liveDisabled = await planEvChargingVisitWithLiveData({
 assert.equal(liveDisabled.dataMode, 'unavailable');
 assert.equal(liveDisabled.candidates.length, 0);
 assert.equal(liveDisabled.planA, undefined);
+assert.ok(Array.isArray(liveDisabled.clarifyingQuestions));
 assert.ok(liveDisabled.visitPlanText.includes('임의 충전소를 추천하지 않습니다'));
 
 const chademoPlan = planEvChargingVisit({
@@ -256,6 +259,7 @@ const weatherUnavailable = await adviseWeatherPowerUsage({
 });
 assert.equal(weatherUnavailable.dataMode, 'unavailable');
 assert.equal(weatherUnavailable.riskLevel, 'unknown');
+assert.ok(weatherUnavailable.clarifyingQuestions.length > 0);
 
 const weatherProvided = await adviseWeatherPowerUsage({
   temperatureC: 35,
@@ -279,6 +283,7 @@ const renewableUnavailable = await analyzeRenewableEnergySale({
   useLiveApi: false
 });
 assert.equal(renewableUnavailable.dataMode, 'unavailable');
+assert.ok(renewableUnavailable.clarifyingQuestions.length > 0);
 
 const renewableProvided = await analyzeRenewableEnergySale({
   text: '100kW 태양광 판매 수익 계산',
@@ -294,6 +299,7 @@ assert.equal(renewableProvided.revenueEstimate?.estimatedAnnualRevenueWon, 29120
 const homeUsageUnavailable = compareHomeElectricityUsage({ monthlyKwh: 420 });
 assert.equal(homeUsageUnavailable.dataMode, 'unavailable');
 assert.equal(homeUsageUnavailable.comparison, undefined);
+assert.ok(homeUsageUnavailable.clarifyingQuestions.length > 0);
 
 const homeUsageProvided = compareHomeElectricityUsage({
   monthlyKwh: 420,
@@ -307,6 +313,7 @@ assert.ok(homeUsageProvided.answerSummary.includes('420'));
 const solarUnavailable = checkSolarRegion({ solarCapacityKw: 3, currentMonthlyKwh: 420 });
 assert.equal(solarUnavailable.dataMode, 'unavailable');
 assert.equal(solarUnavailable.suitability, 'needs_data');
+assert.ok(solarUnavailable.clarifyingQuestions.length > 0);
 
 const solarProvided = checkSolarRegion({
   solarCapacityKw: 3,

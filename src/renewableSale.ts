@@ -63,6 +63,7 @@ export interface RenewableSaleResult {
     assumptions: string[];
   };
   answerSummary: string;
+  clarifyingQuestions: string[];
   nextQuestions: string[];
   requiredApis: ReturnType<typeof getPublicApis>;
   apiReadiness: ReturnType<typeof getApiReadiness>;
@@ -403,6 +404,25 @@ function buildRevenueEstimate(parsed: RenewableSaleResult['parsed']): RenewableS
   };
 }
 
+function buildRenewableClarifyingQuestions(parsed: RenewableSaleResult['parsed'], hasRevenueEstimate: boolean): string[] {
+  const questions: string[] = [];
+  if (!parsed.locationText && !parsed.metroCd) {
+    questions.push('설치 예정 위치 또는 시도/시군구 정보를 알려주세요.');
+  }
+  if (!hasRevenueEstimate) {
+    if (typeof parsed.expectedAnnualGenerationKwh !== 'number') {
+      questions.push('예상 연 발전량(kWh)을 알려주세요.');
+    }
+    if (typeof parsed.smpWonPerKwh !== 'number') {
+      questions.push('SMP 가격(원/kWh)을 알려주거나 KPX API 조회가 가능해야 합니다.');
+    }
+    if (typeof parsed.recPriceWonPerRec !== 'number') {
+      questions.push('REC 가격(원/REC)을 알려주거나 KPX API 조회가 가능해야 합니다.');
+    }
+  }
+  return questions;
+}
+
 function buildRenewableSummary(input: {
   parsed: RenewableSaleResult['parsed'];
   revenueEstimate?: RenewableSaleResult['revenueEstimate'];
@@ -507,6 +527,7 @@ export async function analyzeRenewableEnergySale(input: RenewableSaleInput): Pro
 
   const renewableSummary = renewableContracts ? summarizeRenewableContracts(renewableContracts) : undefined;
   const dispersedSummary = dispersedGeneration ? summarizeDispersedGeneration(dispersedGeneration) : undefined;
+  const clarifyingQuestions = buildRenewableClarifyingQuestions(enrichedParsed, Boolean(revenueEstimate));
 
   return {
     dataMode,
@@ -526,6 +547,7 @@ export async function analyzeRenewableEnergySale(input: RenewableSaleInput): Pro
       renewableContracts: renewableSummary,
       dispersedGeneration: dispersedSummary
     }),
+    clarifyingQuestions,
     nextQuestions: [
       '계통연계 여유용량을 보려면 설치 예정 주소가 시도/시군구/동/리/지번 또는 변전소 코드까지 있는지',
       '발전원과 설비용량이 얼마인지',
