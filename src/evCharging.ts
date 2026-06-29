@@ -621,11 +621,12 @@ function parseText(input: EvChargingPlanInput): Required<Pick<EvChargingPlanInpu
 
   let direction = input.direction;
   if (!direction) {
-    if (text.includes('서울방향')) direction = '서울방향';
-    if (text.includes('부산방향')) direction = '부산방향';
-    if (text.includes('강릉방향')) direction = '강릉방향';
-    if (text.includes('인천방향')) direction = '인천방향';
-    if (text.includes('목포방향')) direction = '목포방향';
+    const directionMatch = text.match(
+      /(서울|부산|강릉|목포|광주|대전|대구|인천|춘천|속초|양양|울산|포항|창원|마산|진주|여수|순천|전주|군산|제주)\s*(?:방향|방면|행|쪽)/
+    );
+    if (directionMatch?.[1]) {
+      direction = `${directionMatch[1]}방향`;
+    }
   }
 
   const vehicleConnector = inferEvConnectorFromVehicleModel(input.vehicleModel ?? text);
@@ -869,10 +870,19 @@ const EV_LOCATION_STOPWORDS = [
   '방향',
   '분뒤',
   '분후',
+  '중인데',
+  '중',
   '찾아',
   '찾아줘',
   '알려',
   '추천',
+  '계획',
+  '세워줘',
+  '짜줘',
+  '플랜',
+  '방문',
+  '곳',
+  '할',
   '가까운',
   '가능',
   '사용가능',
@@ -910,7 +920,10 @@ function normalizeLocationToken(token: string): string {
 }
 
 function removeDirectionOnlyHints(text: string): string {
-  return text.replace(/(?:서울|부산|강릉|목포|광주|대전|대구|인천|춘천|속초|양양|울산|포항|창원|마산|진주|여수|순천|전주|군산|제주)\s*방향/g, ' ');
+  return text.replace(
+    /(?:서울|부산|강릉|목포|광주|대전|대구|인천|춘천|속초|양양|울산|포항|창원|마산|진주|여수|순천|전주|군산|제주)\s*(?:방향|방면|행|쪽)/g,
+    ' '
+  );
 }
 
 function locationCandidateTokens(text?: string): string[] {
@@ -937,14 +950,24 @@ function hasSpecificLocationHint(text?: string): boolean {
   if (!text) {
     return false;
   }
-  if (/(?:특별시|광역시|특별자치시|특별자치도|도|시|군|구|동|읍|면|리|휴게소|IC|JC|나들목|분기점|역|공항|터미널|주차장)/i.test(text)) {
+  const withoutDirection = removeDirectionOnlyHints(text);
+  if (/(?:특별시|광역시|특별자치시|특별자치도|휴게소|IC|JC|나들목|분기점|역|공항|터미널|주차장)/i.test(withoutDirection)) {
     return true;
   }
-  const compactText = text.replace(/\s+/g, '');
+  if (/[가-힣A-Za-z0-9]{2,}(?:시|군|구|동|읍|면|리)(?:\s|$|,|\.|근처|주변|부근|에서|까지|로|으로)/i.test(withoutDirection)) {
+    return true;
+  }
+  const compactText = withoutDirection.replace(/\s+/g, '');
   return [...ZCODE_ALIASES, ...ZSCODE_ALIASES].some((entry) =>
     entry.aliases.some((alias) => {
       const compactAlias = alias.replace(/\s+/g, '');
-      return compactAlias.length >= 2 && compactText.includes(compactAlias) && !compactText.includes(`${compactAlias}방향`);
+      return (
+        compactAlias.length >= 2 &&
+        compactText.includes(compactAlias) &&
+        !compactText.includes(`${compactAlias}방향`) &&
+        !compactText.includes(`${compactAlias}방면`) &&
+        !compactText.includes(`${compactAlias}행`)
+      );
     })
   );
 }
