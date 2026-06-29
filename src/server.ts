@@ -73,15 +73,6 @@ const chargerCandidateSchema = z.object({
   estimatedArrivalMinutes: z.number().min(0).max(1440).optional()
 });
 
-function optionalEnvNumber(name: string): number | undefined {
-  const raw = process.env[name];
-  if (!raw) {
-    return undefined;
-  }
-  const value = Number.parseFloat(raw);
-  return Number.isFinite(value) ? value : undefined;
-}
-
 function createServer(): McpServer {
   const server = new McpServer(
     {
@@ -90,7 +81,7 @@ function createServer(): McpServer {
     },
     {
       instructions:
-        'Use KEPCO Electric Agent tools as an API-first Korean electricity life assistant. For any user question containing kWh, W, kW, wattage, monthly usage, electricity bill, bill difference, appliance use, minutes/hours/days of use, or usage comparison, call estimate_residential_electricity_bill or compare_electricity_usage_scenarios before answering. For solar sale, renewable sale, REC, SMP, PPA, net metering, grid interconnection, renewable contract status, or distributed generation questions, call analyze_renewable_energy_sale. For KEPCO ON/civil-service/FAQ/application-form questions, call the civil-service tools. Prefer public API backed tools for home-usage comparison, weather-based power advice, EV charging, solar/renewable sale checks, and integration status. If a public API is unavailable, return the tool result as unavailable instead of inventing demo data. Do not claim to submit KEPCO civil-service requests, payment, auto-transfer, or confirmed EV charger reservations unless an authenticated partner integration is added.'
+        'Use KEPCO Electric Agent tools as an API-first Korean electricity life assistant. For any user question containing kWh, W, kW, wattage, monthly usage, electricity bill, bill difference, appliance use, minutes/hours/days of use, or usage comparison, call estimate_residential_electricity_bill or compare_electricity_usage_scenarios before answering. For solar sale, renewable sale, REC, SMP, PPA, net metering, grid interconnection, renewable contract status, or distributed generation questions, call analyze_renewable_energy_sale. For KEPCO ON/civil-service/FAQ/application-form questions, call the civil-service tools. Prefer public API backed tools for home-usage comparison, weather-based power advice, EV charging, solar/renewable sale checks, and integration status. If a public API is unavailable, return the tool result as unavailable instead of inventing arbitrary data. Do not claim to submit KEPCO civil-service requests, payment, auto-transfer, or confirmed EV charger reservations unless an authenticated partner integration is added.'
     }
   );
 
@@ -140,15 +131,7 @@ function createServer(): McpServer {
         idempotentHint: true
       }
     },
-    async (input) =>
-      jsonText(
-        estimateBill({
-          ...input,
-          climateEnvironmentWonPerKwh:
-            input.climateEnvironmentWonPerKwh ?? optionalEnvNumber('CLIMATE_ENVIRONMENT_WON_PER_KWH'),
-          fuelAdjustmentWonPerKwh: input.fuelAdjustmentWonPerKwh ?? optionalEnvNumber('FUEL_ADJUSTMENT_WON_PER_KWH')
-        })
-      )
+    async (input) => jsonText(estimateBill(input))
   );
 
   server.registerTool(
@@ -197,7 +180,7 @@ function createServer(): McpServer {
           .max(80)
           .optional()
           .describe('Optional feature filter such as electric_bill, compare_home_usage, weather_power_advisor, solar_region_checker, ev_charging.'),
-        includeReadiness: z.boolean().optional().describe('Whether to include environment/API key readiness. Defaults to true.')
+        includeReadiness: z.boolean().optional().describe('Whether to include API credential/readiness status. Defaults to true.')
       },
       annotations: {
         title: 'Get Public API Catalog',
@@ -212,7 +195,7 @@ function createServer(): McpServer {
         apis: getPublicApis({ area, feature }),
         readiness: includeReadiness === false ? undefined : getApiReadiness({ area, feature }),
         policy:
-          'This MCP is API-first. If a required public API key or endpoint is missing, the related tool returns unavailable instead of fabricated fallback data.'
+          'This MCP is API-first. If a required public API credential or endpoint is missing, the related tool returns unavailable instead of arbitrary data.'
       })
   );
 

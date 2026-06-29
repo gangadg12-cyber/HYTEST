@@ -1,4 +1,4 @@
-import { ensureArray, fetchStructuredWithTimeout, firstConfiguredEnv, parseFiniteNumber } from './publicApiClient.js';
+import { ensureArray, fetchStructuredWithTimeout, firstConfiguredCredential, parseFiniteNumber } from './publicApiClient.js';
 
 export interface KepcoApiResult<T> {
   attempted: boolean;
@@ -47,7 +47,7 @@ export interface KepcoDispersedGeneration {
 const KEPCO_BIGDATA_BASE_URL = 'https://bigdata.kepco.co.kr/openapi/v1';
 
 function getKepcoBigdataKey(): string | undefined {
-  return firstConfiguredEnv(['KEPCO_BIGDATA_API_KEY']).value;
+  return firstConfiguredCredential(['KEPCO_BIGDATA_API_KEY']).value;
 }
 
 function buildKepcoUrl(path: string, params: Record<string, string | number | undefined>): string {

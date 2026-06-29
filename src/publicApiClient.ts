@@ -9,7 +9,7 @@ export interface PublicApiFetchResult<T> {
   message: string;
 }
 
-export function firstConfiguredEnv(names: string[]): { name?: string; value?: string } {
+export function firstConfiguredCredential(names: string[]): { name?: string; value?: string } {
   for (const name of names) {
     const value = getContestCredential(name);
     if (value) {

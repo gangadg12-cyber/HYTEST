@@ -7,8 +7,8 @@ import {
   type KepcoRenewableContract
 } from './kepcoBigdata.js';
 import { resolveKakaoLocation, type KakaoLocationResult } from './kakaoLocal.js';
-import { getApiReadiness, getPublicApis, type ApiDataMode } from './publicApis.js';
-import { ensureArray, fetchStructuredWithTimeout, firstConfiguredEnv, parseFiniteNumber } from './publicApiClient.js';
+import { getApiReadiness, getConfiguredServiceKey, getPublicApis, type ApiDataMode } from './publicApis.js';
+import { ensureArray, fetchStructuredWithTimeout, parseFiniteNumber } from './publicApiClient.js';
 
 export interface RenewableSaleInput {
   text?: string;
@@ -79,6 +79,11 @@ interface MarketApiSummary {
   sampleCount?: number;
 }
 
+const MARKET_API_ENDPOINTS: Record<string, string> = {
+  KPX_SMP_DEMAND_ENDPOINT: 'https://apis.data.go.kr/B552115/SmpWithForecastDemand/getSmpWithForecastDemand',
+  KPX_REC_SPOT_ENDPOINT: 'https://apis.data.go.kr/B552115/RecMarketInfo2/getRecMarketInfo2'
+};
+
 function currentYear(): number {
   return new Date().getFullYear();
 }
@@ -90,6 +95,29 @@ function numberFrom(text: string, patterns: RegExp[]): number | undefined {
     if (Number.isFinite(value)) {
       return value;
     }
+  }
+  return undefined;
+}
+
+function scaledNumberFrom(text: string, patterns: RegExp[]): number | undefined {
+  const normalized = text.replace(/,/g, '');
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    const value = match?.[1] ? Number.parseFloat(match[1]) : undefined;
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      continue;
+    }
+    const unit = match?.[2] ?? '';
+    if (unit.includes('억')) {
+      return value * 100000000;
+    }
+    if (unit.includes('만')) {
+      return value * 10000;
+    }
+    if (unit.includes('천')) {
+      return value * 1000;
+    }
+    return value;
   }
   return undefined;
 }
@@ -132,22 +160,24 @@ function parseRenewableInput(input: RenewableSaleInput): RenewableSaleResult['pa
       ]),
     expectedAnnualGenerationKwh:
       input.expectedAnnualGenerationKwh ??
-      numberFrom(text.replace(/,/g, ''), [
-        /연(?:간)?\s*(\d+(?:\.\d+)?)\s*kwh/i,
-        /(\d+(?:\.\d+)?)\s*kwh\s*\/?\s*년/i
+      scaledNumberFrom(text, [
+        /연(?:간)?\s*(\d+(?:\.\d+)?)\s*(만|천|억)?\s*(?:kwh|kw\s*h|킬로와트시|키로와트시)/i,
+        /(\d+(?:\.\d+)?)\s*(만|천|억)?\s*(?:kwh|kw\s*h|킬로와트시|키로와트시)\s*\/?\s*(?:년|연간|1년)/i
       ]),
     recWeight: input.recWeight ?? numberFrom(text, [/가중치\s*(\d+(?:\.\d+)?)/]) ?? 1,
     smpWonPerKwh:
       input.smpWonPerKwh ??
       wonAmountFrom(text, [
-        /smp\s*(\d+(?:\.\d+)?)\s*(원|천원|만원)?/i,
-        /계통한계가격\s*(\d+(?:\.\d+)?)\s*(원|천원|만원)?/
+        /smp\s*(?:가격|단가|시세|가|는|이)?\s*(\d+(?:\.\d+)?)\s*(원|천원|만원)?/i,
+        /계통한계가격\s*(?:가격|단가|시세|가|는|이)?\s*(\d+(?:\.\d+)?)\s*(원|천원|만원)?/,
+        /(\d+(?:\.\d+)?)\s*(원|천원|만원)?\s*(?:\/?\s*kwh|원\s*\/?\s*kwh)?\s*(?:smp|계통한계가격)/i
       ]),
     recPriceWonPerRec:
       input.recPriceWonPerRec ??
       wonAmountFrom(text, [
-        /rec\s*(\d+(?:\.\d+)?)\s*(원|천원|만원)?/i,
-        /현물시장\s*(?:가격)?\s*(\d+(?:\.\d+)?)\s*(원|천원|만원)?/
+        /rec\s*(?:현물|가격|단가|시세|가|는|이)?\s*(\d+(?:\.\d+)?)\s*(원|천원|만원)?/i,
+        /(?:rec\s*)?현물시장\s*(?:가격|단가|시세|가|는|이)?\s*(\d+(?:\.\d+)?)\s*(원|천원|만원)?/i,
+        /(\d+(?:\.\d+)?)\s*(원|천원|만원)?\s*(?:\/?\s*rec)?\s*(?:rec|현물시장)/i
       ])
   };
 }
@@ -277,19 +307,19 @@ function inferKnownMetroCd(text?: string): string | undefined {
 }
 
 async function fetchMarketValue(input: {
-  endpointEnv: string;
-  serviceKeyEnv: string;
-  fallbackServiceKeyEnv?: string;
+  endpointName: string;
+  serviceKeyName: string;
   label: string;
+  valueFieldHints: string[];
 }): Promise<MarketApiSummary> {
-  const endpoint = process.env[input.endpointEnv];
-  const key = firstConfiguredEnv([input.serviceKeyEnv, input.fallbackServiceKeyEnv ?? 'DATA_GO_KR_SERVICE_KEY']).value;
+  const endpoint = MARKET_API_ENDPOINTS[input.endpointName];
+  const key = getConfiguredServiceKey([input.serviceKeyName]);
   if (!endpoint) {
     return {
       attempted: false,
       used: false,
       serviceKeyConfigured: Boolean(key),
-      message: `${input.endpointEnv}가 설정되어 있지 않아 ${input.label} API를 호출하지 않았습니다.`
+      message: `서버 소스코드에 ${input.endpointName} endpoint가 등록되어 있지 않아 ${input.label} API를 호출하지 않았습니다.`
     };
   }
   if (!key) {
@@ -298,11 +328,11 @@ async function fetchMarketValue(input: {
       used: false,
       serviceKeyConfigured: false,
       endpoint,
-      message: `${input.serviceKeyEnv} 또는 DATA_GO_KR_SERVICE_KEY가 없어 ${input.label} API를 호출하지 않았습니다.`
+      message: `서버 소스코드에 ${input.serviceKeyName}가 등록되어 있지 않아 ${input.label} API를 호출하지 않았습니다.`
     };
   }
 
-  const params = new URLSearchParams({ serviceKey: key, ServiceKey: key, pageNo: '1', numOfRows: '30', dataType: 'JSON' });
+  const params = new URLSearchParams({ serviceKey: key, ServiceKey: key, pageNo: '1', numOfRows: '30', dataType: 'json' });
   const url = endpoint.includes('?') ? `${endpoint}&${params.toString()}` : `${endpoint}?${params.toString()}`;
   const result = await fetchStructuredWithTimeout(url, {}, 15000);
   if (!result.ok) {
@@ -319,11 +349,7 @@ async function fetchMarketValue(input: {
   const response = body?.response as Record<string, unknown> | undefined;
   const itemsContainer = (response?.body as Record<string, unknown> | undefined)?.items as Record<string, unknown> | undefined;
   const rows = ensureArray((itemsContainer?.item ?? body?.data ?? body?.items) as Record<string, unknown> | Record<string, unknown>[] | undefined);
-  const numericValues = rows
-    .flatMap((row) => Object.values(row))
-    .map(parseFiniteNumber)
-    .filter((value): value is number => typeof value === 'number' && value > 0);
-  const representativeValue = numericValues[0];
+  const representativeValue = findRepresentativeMarketValue(rows, input.valueFieldHints);
   return {
     attempted: true,
     used: typeof representativeValue === 'number',
@@ -331,11 +357,28 @@ async function fetchMarketValue(input: {
     endpoint,
     message:
       typeof representativeValue === 'number'
-        ? `${input.label} API에서 대표 숫자값을 추출했습니다. 정확한 필드 매핑은 서비스별 응답 스키마에 맞춰 보정해야 합니다.`
+        ? `${input.label} API에서 가격 성격의 대표 필드를 추출했습니다.`
         : `${input.label} API 응답에서 수익 계산에 쓸 숫자 필드를 찾지 못했습니다.`,
     representativeValue,
     sampleCount: rows.length
   };
+}
+
+function findRepresentativeMarketValue(rows: Record<string, unknown>[], valueFieldHints: string[]): number | undefined {
+  const normalizedHints = valueFieldHints.map((hint) => hint.toLowerCase());
+  for (const row of rows) {
+    const hinted = Object.entries(row)
+      .filter(([key]) => {
+        const normalizedKey = key.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+        return normalizedHints.some((hint) => normalizedKey.includes(hint));
+      })
+      .map(([, value]) => parseFiniteNumber(value))
+      .filter((value): value is number => typeof value === 'number' && value > 0);
+    if (hinted.length > 0) {
+      return hinted[0];
+    }
+  }
+  return undefined;
 }
 
 function buildRevenueEstimate(parsed: RenewableSaleResult['parsed']): RenewableSaleResult['revenueEstimate'] | undefined {
@@ -428,17 +471,19 @@ export async function analyzeRenewableEnergySale(input: RenewableSaleInput): Pro
     typeof parsed.smpWonPerKwh === 'number'
       ? undefined
       : await fetchMarketValue({
-          endpointEnv: 'KPX_SMP_DEMAND_ENDPOINT',
-          serviceKeyEnv: 'KPX_SMP_DEMAND_SERVICE_KEY',
-          label: 'KPX SMP/수요예측'
+          endpointName: 'KPX_SMP_DEMAND_ENDPOINT',
+          serviceKeyName: 'KPX_SMP_DEMAND_SERVICE_KEY',
+          label: 'KPX SMP/수요예측',
+          valueFieldHints: ['smp', '육지smp', '제주smp', 'landsmp', 'jejusmp']
         });
   const rec =
     typeof parsed.recPriceWonPerRec === 'number'
       ? undefined
       : await fetchMarketValue({
-          endpointEnv: 'KPX_REC_SPOT_ENDPOINT',
-          serviceKeyEnv: 'KPX_REC_SPOT_SERVICE_KEY',
-          label: 'KPX REC 현물시장'
+          endpointName: 'KPX_REC_SPOT_ENDPOINT',
+          serviceKeyName: 'KPX_REC_SPOT_SERVICE_KEY',
+          label: 'KPX REC 현물시장',
+          valueFieldHints: ['avg', '평균', '평균가', 'price', 'prc', '종가', 'closing']
         });
 
   const enrichedParsed = {

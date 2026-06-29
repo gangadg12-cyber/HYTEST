@@ -98,25 +98,11 @@ Health check:
 http://localhost:3000/healthz
 ```
 
-## Environment Variables
+## API Credentials
 
-```text
-EV_CHARGER_SERVICE_KEY=encoded-data-go-kr-service-key
-DATA_GO_KR_SERVICE_KEY=encoded-data-go-kr-service-key
-KEPCO_BIGDATA_API_KEY=encoded-kepco-bigdata-40-char-key
-KAKAO_REST_API_KEY=kakao-rest-api-key
-KAKAO_MOBILITY_REST_API_KEY=same-as-kakao-rest-api-key-if-needed
-KMA_SHORT_FORECAST_SERVICE_KEY=encoded-kma-service-key
-KPX_SMP_DEMAND_SERVICE_KEY=encoded-kpx-smp-service-key
-KPX_REC_SPOT_SERVICE_KEY=encoded-kpx-rec-service-key
-KPX_REGIONAL_SOLAR_HOURLY_SERVICE_KEY=encoded-kpx-solar-service-key
-KPX_SMP_DEMAND_ENDPOINT=
-KPX_REC_SPOT_ENDPOINT=
-```
+For the PlayMCP contest build, public API keys are embedded in `src/contestCredentials.ts` because the KC/PlayMCP build UI does not provide a runtime secret field. KPX SMP/REC endpoint URLs are fixed in source code. `plan_ev_charging_visit` can resolve a user-provided place name/address, call the public KECO EV charger info/status APIs by region code, and rank real charger candidates by distance, status, output, and connector match. The public API does not accept arbitrary natural-language address or coordinate filters directly, so the MCP resolves location through Kakao and filters/ranks the returned official candidates internally. It still never fabricates charger candidates when the public API fails.
 
-For the PlayMCP contest build, public API keys are embedded in `src/contestCredentials.ts` because the KC/PlayMCP build UI does not provide a runtime secret field. `plan_ev_charging_visit` can resolve a user-provided place name/address, call the public KECO EV charger info/status APIs by region code, and rank real charger candidates by distance, status, output, and connector match. The public API does not accept arbitrary natural-language address or coordinate filters directly, so the MCP resolves location through Kakao and filters/ranks the returned official candidates internally. It still never fabricates charger candidates when the public API fails.
-
-API-first rule: tools never fabricate public API results. When the needed public API key, endpoint mapping, coordinate, or benchmark is missing, the tool returns `dataMode: "unavailable"` with required API codes instead of demo data.
+API-first rule: tools never fabricate public API results. When the needed public API key, endpoint mapping, coordinate, or benchmark is missing, the tool returns `dataMode: "unavailable"` with required API codes instead of arbitrary data.
 
 ## Docker
 

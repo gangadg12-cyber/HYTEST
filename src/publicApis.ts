@@ -26,7 +26,7 @@ export interface PublicApiDefinition {
   area: PublicApiArea;
   sourceUrl: string;
   auth: 'none' | 'service_key' | 'user_auth_or_partner';
-  envVars: string[];
+  credentialNames: string[];
   runtimeStatus: PublicApiRuntimeStatus;
   usedFor: string[];
   mvpBoundary: string;
@@ -38,7 +38,7 @@ export interface ApiReadiness {
   area: PublicApiArea;
   runtimeStatus: PublicApiRuntimeStatus;
   ready: boolean;
-  missingEnvVars: string[];
+  missingCredentialNames: string[];
   mvpBoundary: string;
 }
 
@@ -50,7 +50,7 @@ export const PUBLIC_API_CATALOG: PublicApiDefinition[] = [
     area: 'bill',
     sourceUrl: 'https://www.data.go.kr/data/15090700/fileData.do',
     auth: 'none',
-    envVars: [],
+    credentialNames: [],
     runtimeStatus: 'implemented',
     usedFor: ['사용량 기반 예상 전기요금 계산', '누진구간 설명', '요금 절감 시뮬레이션'],
     mvpBoundary: '현재 서버 내 공식 요금표 기준 계산으로 구현되어 있으며, 요금표 개정 시 데이터 갱신이 필요합니다.'
@@ -62,8 +62,8 @@ export const PUBLIC_API_CATALOG: PublicApiDefinition[] = [
     area: 'home_usage',
     sourceUrl: 'https://www.data.go.kr/',
     auth: 'service_key',
-    envVars: ['KEPCO_BIGDATA_API_KEY'],
-    runtimeStatus: 'implemented',
+    credentialNames: ['KEPCO_BIGDATA_API_KEY'],
+    runtimeStatus: 'configured_endpoint_required',
     usedFor: ['우리집 사용량 평균 비교', '가구원수/계절별 평균 안내'],
     mvpBoundary: '서비스키와 실제 endpoint 매핑 전에는 사용자가 제공한 기준값이 있을 때만 비교합니다.'
   },
@@ -74,8 +74,8 @@ export const PUBLIC_API_CATALOG: PublicApiDefinition[] = [
     area: 'home_usage',
     sourceUrl: 'https://www.data.go.kr/',
     auth: 'service_key',
-    envVars: ['KEPCO_BIGDATA_API_KEY'],
-    runtimeStatus: 'implemented',
+    credentialNames: ['KEPCO_BIGDATA_API_KEY'],
+    runtimeStatus: 'configured_endpoint_required',
     usedFor: ['주택용/일반용/산업용 사용량 비교', '평균판매단가 비교'],
     mvpBoundary: '개인 고객 사용량 조회가 아니라 공개 통계 비교용입니다.'
   },
@@ -86,8 +86,8 @@ export const PUBLIC_API_CATALOG: PublicApiDefinition[] = [
     area: 'home_usage',
     sourceUrl: 'https://www.data.go.kr/',
     auth: 'service_key',
-    envVars: ['KEPCO_BIGDATA_API_KEY'],
-    runtimeStatus: 'implemented',
+    credentialNames: ['KEPCO_BIGDATA_API_KEY'],
+    runtimeStatus: 'configured_endpoint_required',
     usedFor: ['우리 지역 전력 사용량 비교', '지역 전력 소비 트렌드'],
     mvpBoundary: '공개 통계 기반 비교만 가능하며 개인 사용량 조회는 불가합니다.'
   },
@@ -98,7 +98,7 @@ export const PUBLIC_API_CATALOG: PublicApiDefinition[] = [
     area: 'civil_service',
     sourceUrl: 'https://www.data.go.kr/',
     auth: 'service_key',
-    envVars: ['KEPCO_BIGDATA_API_KEY'],
+    credentialNames: ['KEPCO_BIGDATA_API_KEY'],
     runtimeStatus: 'service_key_required',
     usedFor: ['복지할인 유형 안내', '할인 신청 경로 안내'],
     mvpBoundary: '할인 대상 최종 판정과 신청은 한전ON 인증 또는 공식 연계가 필요합니다.'
@@ -110,7 +110,7 @@ export const PUBLIC_API_CATALOG: PublicApiDefinition[] = [
     area: 'civil_service',
     sourceUrl: 'https://www.data.go.kr/data/3068685/fileData.do',
     auth: 'none',
-    envVars: [],
+    credentialNames: [],
     runtimeStatus: 'catalog_only',
     usedFor: ['이사정산', '명의변경', '납부', '전기사용신청 FAQ 안내'],
     mvpBoundary: '현재는 서버 내 민원 카탈로그/공식 경로 안내 중심이며, FAQ 전문 검색은 별도 인덱싱이 필요합니다.'
@@ -122,7 +122,7 @@ export const PUBLIC_API_CATALOG: PublicApiDefinition[] = [
     area: 'civil_service',
     sourceUrl: 'https://www.data.go.kr/',
     auth: 'service_key',
-    envVars: ['KEPCO_BIGDATA_API_KEY'],
+    credentialNames: ['KEPCO_BIGDATA_API_KEY'],
     runtimeStatus: 'service_key_required',
     usedFor: ['관할 사업소 안내', '주소/대표번호/업무 안내'],
     mvpBoundary: '주소 기반 관할 사업소 자동 매칭은 API endpoint와 주소 정규화가 필요합니다.'
@@ -134,7 +134,7 @@ export const PUBLIC_API_CATALOG: PublicApiDefinition[] = [
     area: 'civil_service',
     sourceUrl: 'https://www.data.go.kr/',
     auth: 'service_key',
-    envVars: ['KEPCO_BIGDATA_API_KEY'],
+    credentialNames: ['KEPCO_BIGDATA_API_KEY'],
     runtimeStatus: 'service_key_required',
     usedFor: ['자동이체/모바일 청구 방식 안내', '청구 방식 통계'],
     mvpBoundary: '실제 자동이체 등록/변경은 인증 또는 공식 연계가 필요합니다.'
@@ -146,7 +146,7 @@ export const PUBLIC_API_CATALOG: PublicApiDefinition[] = [
     area: 'location',
     sourceUrl: 'https://developers.kakao.com/docs/ko/local/dev-guide',
     auth: 'service_key',
-    envVars: ['KAKAO_REST_API_KEY'],
+    credentialNames: ['KAKAO_REST_API_KEY'],
     runtimeStatus: 'implemented',
     usedFor: ['장소명/주소를 위도·경도로 변환', 'EV 충전소 주변 검색 기준점 생성', '행정구역 보조 판정'],
     mvpBoundary: 'MCP가 사용자의 GPS를 직접 읽는 것은 아니며, 사용자가 입력한 장소명/주소를 좌표로 변환합니다.'
@@ -158,7 +158,7 @@ export const PUBLIC_API_CATALOG: PublicApiDefinition[] = [
     area: 'location',
     sourceUrl: 'https://developers.kakaomobility.com/guide/navi-api/directions',
     auth: 'service_key',
-    envVars: ['KAKAO_REST_API_KEY', 'KAKAO_MOBILITY_REST_API_KEY'],
+    credentialNames: ['KAKAO_REST_API_KEY', 'KAKAO_MOBILITY_REST_API_KEY'],
     runtimeStatus: 'service_key_required',
     usedFor: ['도로 기준 거리/도착시간 계산', 'EV 충전소 방문 플랜 고도화'],
     mvpBoundary: '현재는 직선거리/사용가능 상태 기반이며, 실제 도로 ETA는 길찾기 API 연결 시 고도화됩니다.'
@@ -170,7 +170,7 @@ export const PUBLIC_API_CATALOG: PublicApiDefinition[] = [
     area: 'ev_charging',
     sourceUrl: 'https://www.data.go.kr/data/15076352/openapi.do',
     auth: 'service_key',
-    envVars: ['EV_CHARGER_SERVICE_KEY', 'DATA_GO_KR_SERVICE_KEY'],
+    credentialNames: ['EV_CHARGER_SERVICE_KEY', 'DATA_GO_KR_SERVICE_KEY'],
     runtimeStatus: 'implemented',
     usedFor: ['zcode 기반 충전소 정보 조회', '충전기 타입', '현재 상태 병합', '좌표/거리 기반 내부 후보 랭킹'],
     mvpBoundary: '공공 API는 주소/좌표 직접 검색이 아니라 지역코드 기반 조회입니다. MCP가 카카오 위치 API로 좌표를 잡고, 조회 결과를 거리/커넥터/출력 조건으로 내부 필터링합니다. 실제 예약 확정은 충전사업자 연계가 필요합니다.'
@@ -182,7 +182,7 @@ export const PUBLIC_API_CATALOG: PublicApiDefinition[] = [
     area: 'weather',
     sourceUrl: 'https://www.data.go.kr/data/15084084/openapi.do',
     auth: 'service_key',
-    envVars: ['KMA_SHORT_FORECAST_SERVICE_KEY', 'KMA_SERVICE_KEY', 'DATA_GO_KR_SERVICE_KEY'],
+    credentialNames: ['KMA_SHORT_FORECAST_SERVICE_KEY', 'KMA_SERVICE_KEY', 'DATA_GO_KR_SERVICE_KEY'],
     runtimeStatus: 'implemented',
     usedFor: ['초단기실황/예보', '냉방비/난방비 위험 안내', '피크 시간대 안내'],
     mvpBoundary: '격자 좌표(nx, ny) 또는 위치 변환이 필요합니다.'
@@ -194,7 +194,7 @@ export const PUBLIC_API_CATALOG: PublicApiDefinition[] = [
     area: 'weather',
     sourceUrl: 'https://www.data.go.kr/',
     auth: 'service_key',
-    envVars: ['KMA_SHORT_FORECAST_SERVICE_KEY', 'KMA_SERVICE_KEY', 'DATA_GO_KR_SERVICE_KEY'],
+    credentialNames: ['KMA_SHORT_FORECAST_SERVICE_KEY', 'KMA_SERVICE_KEY', 'DATA_GO_KR_SERVICE_KEY'],
     runtimeStatus: 'service_key_required',
     usedFor: ['폭염/한파/호우/태풍 위험 안내', '전기설비 주의사항'],
     mvpBoundary: '특보 API endpoint 매핑 전에는 사용자가 입력한 특보/기온 정보만 반영합니다.'
@@ -206,7 +206,7 @@ export const PUBLIC_API_CATALOG: PublicApiDefinition[] = [
     area: 'solar',
     sourceUrl: 'https://www.data.go.kr/',
     auth: 'service_key',
-    envVars: ['KEPCO_BIGDATA_API_KEY'],
+    credentialNames: ['KEPCO_BIGDATA_API_KEY'],
     runtimeStatus: 'implemented',
     usedFor: ['지역별 신재생 설비 현황', '태양광 보급 수준 비교'],
     mvpBoundary: '지역 통계 기반 안내이며 개별 부지 수익성 판단은 별도 데이터가 필요합니다.'
@@ -218,7 +218,7 @@ export const PUBLIC_API_CATALOG: PublicApiDefinition[] = [
     area: 'solar',
     sourceUrl: 'https://www.data.go.kr/',
     auth: 'service_key',
-    envVars: ['KEPCO_BIGDATA_API_KEY'],
+    credentialNames: ['KEPCO_BIGDATA_API_KEY'],
     runtimeStatus: 'implemented',
     usedFor: ['선로 여유용량', '계통연계 가능성 안내'],
     mvpBoundary: '최종 접속 가능 여부는 한전 검토/신청 절차가 필요합니다.'
@@ -230,7 +230,7 @@ export const PUBLIC_API_CATALOG: PublicApiDefinition[] = [
     area: 'solar',
     sourceUrl: 'https://www.data.go.kr/',
     auth: 'service_key',
-    envVars: ['KPX_REGIONAL_SOLAR_HOURLY_SERVICE_KEY', 'DATA_GO_KR_SERVICE_KEY'],
+    credentialNames: ['KPX_REGIONAL_SOLAR_HOURLY_SERVICE_KEY', 'DATA_GO_KR_SERVICE_KEY'],
     runtimeStatus: 'service_key_required',
     usedFor: ['위치/시간 기반 태양광 발전량 예측', '전기요금 절감액 추정'],
     mvpBoundary: '서비스키와 정확한 endpoint 매핑 전에는 사용자가 제공한 일발전량/일사량 기준으로만 계산합니다.'
@@ -242,7 +242,7 @@ export const PUBLIC_API_CATALOG: PublicApiDefinition[] = [
     area: 'solar',
     sourceUrl: 'https://www.data.go.kr/',
     auth: 'service_key',
-    envVars: ['KMA_SHORT_FORECAST_SERVICE_KEY', 'DATA_GO_KR_SERVICE_KEY'],
+    credentialNames: ['KMA_SHORT_FORECAST_SERVICE_KEY', 'DATA_GO_KR_SERVICE_KEY'],
     runtimeStatus: 'service_key_required',
     usedFor: ['실시간 일사량', '태양광 입지 간단 진단'],
     mvpBoundary: '기상/일사량 데이터는 지역 또는 좌표 입력이 필요합니다.'
@@ -252,10 +252,10 @@ export const PUBLIC_API_CATALOG: PublicApiDefinition[] = [
     label: '한국전력거래소 계통한계가격 및 수요예측(하루전 발전계획용)',
     provider: '한국전력거래소',
     area: 'power_grid',
-    sourceUrl: 'https://www.data.go.kr/',
+    sourceUrl: 'https://www.data.go.kr/data/15131225/openapi.do',
     auth: 'service_key',
-    envVars: ['KPX_SMP_DEMAND_SERVICE_KEY', 'DATA_GO_KR_SERVICE_KEY'],
-    runtimeStatus: 'service_key_required',
+    credentialNames: ['KPX_SMP_DEMAND_SERVICE_KEY', 'DATA_GO_KR_SERVICE_KEY'],
+    runtimeStatus: 'implemented',
     usedFor: ['SMP 기반 발전 판매 수익 추정', '전력수요 참고'],
     mvpBoundary: '공공 시장가격 참고용이며 실제 정산/계약 가격은 계약조건과 시장 규칙 확인이 필요합니다.'
   },
@@ -264,10 +264,10 @@ export const PUBLIC_API_CATALOG: PublicApiDefinition[] = [
     label: '한국전력거래소 REC 현물시장 정보',
     provider: '한국전력거래소',
     area: 'power_grid',
-    sourceUrl: 'https://www.data.go.kr/',
+    sourceUrl: 'https://www.data.go.kr/data/15099762/openapi.do',
     auth: 'service_key',
-    envVars: ['KPX_REC_SPOT_SERVICE_KEY', 'DATA_GO_KR_SERVICE_KEY'],
-    runtimeStatus: 'service_key_required',
+    credentialNames: ['KPX_REC_SPOT_SERVICE_KEY', 'DATA_GO_KR_SERVICE_KEY'],
+    runtimeStatus: 'implemented',
     usedFor: ['REC 가격/거래량 기반 신재생 판매 수익 추정'],
     mvpBoundary: 'REC 실제 수익은 설비별 가중치, 계약방식, 거래시점에 따라 달라집니다.'
   }
@@ -300,22 +300,18 @@ export function getPublicApis(input: { area?: PublicApiArea; feature?: string; c
   return apis;
 }
 
-export function getApiReadiness(input: { area?: PublicApiArea; feature?: string; env?: NodeJS.ProcessEnv } = {}): ApiReadiness[] {
+export function getApiReadiness(input: { area?: PublicApiArea; feature?: string } = {}): ApiReadiness[] {
   return getPublicApis(input).map((api) => {
-    const alternatives = api.envVars;
-    const ready =
-      api.runtimeStatus === 'implemented' && alternatives.length === 0
-        ? true
-        : alternatives.length > 0
-          ? alternatives.some((name) => Boolean(getContestCredential(name)))
-          : api.runtimeStatus === 'catalog_only';
+    const alternatives = api.credentialNames;
+    const credentialReady = alternatives.length === 0 || alternatives.some((name) => Boolean(getContestCredential(name)));
+    const ready = api.runtimeStatus === 'implemented' ? credentialReady : api.runtimeStatus === 'catalog_only';
     return {
       code: api.code,
       label: api.label,
       area: api.area,
       runtimeStatus: api.runtimeStatus,
       ready,
-      missingEnvVars: ready ? [] : alternatives,
+      missingCredentialNames: credentialReady ? [] : alternatives,
       mvpBoundary: api.mvpBoundary
     };
   });

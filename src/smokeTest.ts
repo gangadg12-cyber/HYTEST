@@ -43,16 +43,43 @@ assert.equal(dryerPerUse.additionalMonthlyKwh, 40);
 assert.equal(dryerPerUse.parsed.perUseKwh, 2);
 assert.equal(dryerPerUse.parsed.usesPerMonth, 20);
 
+const dryerPerUseWithBase = estimateBill({
+  text: '월 350kWh 쓰는데 건조기 1회 2kWh 한 달 20번 쓰면 얼마나 더 나와?'
+});
+assert.equal(dryerPerUseWithBase.parsed.baseMonthlyKwh, 350);
+assert.equal(dryerPerUseWithBase.additionalMonthlyKwh, 40);
+assert.ok(typeof dryerPerUseWithBase.increaseWon === 'number' && dryerPerUseWithBase.increaseWon > 0);
+
 const microwaveMinutes = estimateBill({
   text: '900W 전자레인지 매일 10분 쓰면 한 달 전기요금 얼마나 늘어?'
 });
 assert.equal(microwaveMinutes.additionalMonthlyKwh, 4.5);
+
+const koreanWattUnit = estimateBill({
+  text: '1500와트 제품 하루 2시간 10일 쓰면 얼마나 늘어?'
+});
+assert.equal(koreanWattUnit.parsed.powerW, 1500);
+assert.equal(koreanWattUnit.additionalMonthlyKwh, 30);
+
+const reducedUsage = estimateBill({
+  text: '월 350kWh에서 80kWh 줄이면 전기요금 얼마나 아껴?'
+});
+assert.equal(reducedUsage.additionalMonthlyKwh, -80);
+assert.equal(reducedUsage.afterBill?.monthlyKwh, 270);
+assert.ok(typeof reducedUsage.increaseWon === 'number' && reducedUsage.increaseWon < 0);
 
 const monthlyKwhComparison = compareUsageScenarios({
   text: '250kWh랑 350kWh 차이가 얼마야?'
 });
 assert.equal(monthlyKwhComparison.usageBillComparisons?.length, 2);
 assert.ok((monthlyKwhComparison.usageBillComparisons?.[1]?.differenceFromPreviousWon ?? 0) > 0);
+
+const reducedUsageScenario = compareUsageScenarios({
+  text: '350kWh에서 80kWh 줄이면 얼마나 아껴?'
+});
+assert.equal(reducedUsageScenario.usageBillComparisons, undefined);
+assert.equal(reducedUsageScenario.directIncreaseScenarios?.length, 1);
+assert.equal(reducedUsageScenario.directIncreaseScenarios?.[0]?.afterMonthlyKwh, 270);
 
 const julyBill = estimateBill({
   text: '7월에 460kWh 쓰면 전기요금이 얼마나 나와?'

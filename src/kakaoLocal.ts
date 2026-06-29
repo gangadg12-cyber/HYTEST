@@ -1,4 +1,4 @@
-import { fetchStructuredWithTimeout, firstConfiguredEnv, parseFiniteNumber } from './publicApiClient.js';
+import { fetchStructuredWithTimeout, firstConfiguredCredential, parseFiniteNumber } from './publicApiClient.js';
 
 export interface KakaoResolvedLocation {
   query: string;
@@ -61,7 +61,7 @@ const LOCATION_STOPWORDS = [
 ];
 
 function getKakaoRestKey(): string | undefined {
-  return firstConfiguredEnv(['KAKAO_REST_API_KEY', 'KAKAO_MOBILITY_REST_API_KEY']).value;
+  return firstConfiguredCredential(['KAKAO_REST_API_KEY', 'KAKAO_MOBILITY_REST_API_KEY']).value;
 }
 
 function compactText(text: string): string {

@@ -715,7 +715,7 @@ async function fetchKecoEvChargerCandidates(input: EvChargingPlanInput): Promise
       zcode,
       zscode,
       fetchedCount: 0,
-      message: 'EV_CHARGER_SERVICE_KEY 또는 DATA_GO_KR_SERVICE_KEY 환경변수가 없어 공공데이터포털 충전소 API를 호출하지 않았습니다.'
+      message: '서버 소스코드에 EV_CHARGER_SERVICE_KEY 또는 DATA_GO_KR_SERVICE_KEY가 등록되어 있지 않아 공공데이터포털 충전소 API를 호출하지 않았습니다.'
     };
   }
   if (!zcode && (typeof input.latitude !== 'number' || typeof input.longitude !== 'number')) {

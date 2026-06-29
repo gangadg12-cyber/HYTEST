@@ -151,7 +151,10 @@ function parsePowerW(text: string): number | undefined {
   if (typeof kw === 'number') {
     return kw * 1000;
   }
-  return parseNumberNear(text, [/(\d+(?:\.\d+)?)\s*(?:w|와트)\b/i]);
+  return parseNumberNear(text, [
+    /(\d+(?:\.\d+)?)\s*w\b/i,
+    /(\d+(?:\.\d+)?)\s*와트/i
+  ]);
 }
 
 function parseHoursPerDay(text: string, applianceName?: string): { value?: number; assumption?: string } {
@@ -224,20 +227,25 @@ function parseUsesPerMonth(text: string): number | undefined {
 }
 
 function parseDirectAdditionalKwh(text: string): number | undefined {
+  const reduced = parseNumberNear(text, [
+    /(\d+(?:\.\d+)?)\s*(?:kwh|kw\s*h|킬로와트시|키로와트시)\s*(?:줄|감소|절감|덜|빼|낮)/i,
+    /(?:줄|줄이|줄였|줄면|줄어|감소|절감|덜|빼|낮)\s*(?:였|이면|이면은|하면|한다면|된다면|되면|사용|썼|쓰면)?\s*(\d+(?:\.\d+)?)\s*(?:kwh|kw\s*h|킬로와트시|키로와트시)/i
+  ]);
+  if (typeof reduced === 'number') {
+    return -reduced;
+  }
   return parseNumberNear(text, [
     /(\d+(?:\.\d+)?)\s*(?:kwh|kw\s*h|킬로와트시|키로와트시)\s*(?:더|추가|늘|증가|많)/i,
     /(?:더|추가|늘|증가|많)\s*(?:썼|사용|나왔|된다면|되면)?\s*(\d+(?:\.\d+)?)\s*(?:kwh|kw\s*h|킬로와트시|키로와트시)/i
   ]);
 }
 
-function parseMonthlyKwh(text: string, hasPerUseEnergy: boolean, hasUsageDetail: boolean): number | undefined {
-  if (hasPerUseEnergy || typeof parseDirectAdditionalKwh(text) === 'number') {
-    return undefined;
-  }
-
+function parseMonthlyKwh(text: string, hasUsageDetail: boolean): number | undefined {
   const monthly = parseNumberNear(text, [
+    /(?:기존|현재|평소|지난달|전월).{0,18}?(\d+(?:\.\d+)?)\s*(?:kwh|kw\s*h|킬로와트시|키로와트시)/i,
     /(?:월|월간|한\s*달|한달|이번\s*달|이번달|이번\s*월|이번월).{0,18}?(\d+(?:\.\d+)?)\s*(?:kwh|kw\s*h|킬로와트시|키로와트시)/i,
     /(?:사용량|전력량|전기).{0,18}?(\d+(?:\.\d+)?)\s*(?:kwh|kw\s*h|킬로와트시|키로와트시)/i,
+    /(\d+(?:\.\d+)?)\s*(?:kwh|kw\s*h|킬로와트시|키로와트시).{0,18}?(?:기준|에서|인데|쓰는데|사용중|사용\s*중|쓰고|나오는데)/i,
     /(\d+(?:\.\d+)?)\s*(?:kwh|kw\s*h|킬로와트시|키로와트시).{0,18}?(?:썼|사용|나왔|정도|청구|요금|쓸)/i
   ]);
   if (typeof monthly === 'number') {
@@ -301,7 +309,6 @@ export function parseUsageRequest(input: BillEstimateInput): ParsedUsageRequest 
   if (typeof baseMonthlyKwh !== 'number') {
     baseMonthlyKwh = parseMonthlyKwh(
       normalized,
-      typeof perUseKwh === 'number',
       typeof powerW === 'number' || typeof hoursPerDay === 'number' || typeof daysPerMonth === 'number'
     );
   }
@@ -409,18 +416,19 @@ export function calculateResidentialBill(input: {
   fuelAdjustmentWonPerKwh?: number;
 }): BillBreakdown {
   const tariff = getResidentialTariff(input.voltageType, input.season);
-  const charge = calculateEnergyCharge(input.monthlyKwh, input.voltageType, input.season);
+  const monthlyKwh = Math.max(0, input.monthlyKwh);
+  const charge = calculateEnergyCharge(monthlyKwh, input.voltageType, input.season);
   const climateUnit = input.climateEnvironmentWonPerKwh ?? tariff.climateEnvironmentWonPerKwh;
   const fuelUnit = input.fuelAdjustmentWonPerKwh ?? tariff.fuelAdjustmentWonPerKwh;
-  const climateEnvironmentChargeWon = roundWon(input.monthlyKwh * climateUnit);
-  const fuelAdjustmentChargeWon = roundWon(input.monthlyKwh * fuelUnit);
+  const climateEnvironmentChargeWon = roundWon(monthlyKwh * climateUnit);
+  const fuelAdjustmentChargeWon = roundWon(monthlyKwh * fuelUnit);
   const electricityChargeBeforeTaxWon =
     charge.basicChargeWon + charge.energyChargeWon + climateEnvironmentChargeWon + fuelAdjustmentChargeWon;
   const vatWon = roundWon(electricityChargeBeforeTaxWon * tariff.vatRate);
   const powerIndustryFundWon = floorToTen(electricityChargeBeforeTaxWon * tariff.powerIndustryFundRate);
 
   return {
-    monthlyKwh: Number(input.monthlyKwh.toFixed(3)),
+    monthlyKwh: Number(monthlyKwh.toFixed(3)),
     basicChargeWon: charge.basicChargeWon,
     energyChargeWon: charge.energyChargeWon,
     climateEnvironmentChargeWon,
@@ -534,7 +542,7 @@ export function estimateBill(input: BillEstimateInput): BillEstimateResult {
       return result;
     }
     const afterBill = calculateResidentialBill({
-      monthlyKwh: parsed.baseMonthlyKwh + additionalMonthlyKwh,
+      monthlyKwh: Math.max(0, parsed.baseMonthlyKwh + additionalMonthlyKwh),
       voltageType: parsed.voltageType,
       season: parsed.season,
       climateEnvironmentWonPerKwh: input.climateEnvironmentWonPerKwh,
@@ -548,14 +556,15 @@ export function estimateBill(input: BillEstimateInput): BillEstimateResult {
   } else {
     result.marginalScenarios = [200, 300, 400, 500].map((base) => {
       const before = calculateResidentialBill({ monthlyKwh: base, voltageType: parsed.voltageType, season: parsed.season });
+      const afterMonthlyKwh = Math.max(0, base + additionalMonthlyKwh);
       const after = calculateResidentialBill({
-        monthlyKwh: base + additionalMonthlyKwh,
+        monthlyKwh: afterMonthlyKwh,
         voltageType: parsed.voltageType,
         season: parsed.season
       });
       return {
         assumedBaseMonthlyKwh: base,
-        afterMonthlyKwh: Number((base + additionalMonthlyKwh).toFixed(3)),
+        afterMonthlyKwh: Number(afterMonthlyKwh.toFixed(3)),
         estimatedIncreaseWon: after.estimatedTotalWon - before.estimatedTotalWon
       };
     });
@@ -606,8 +615,9 @@ export function compareUsageScenarios(input: {
     daysPerMonth: input.daysPerMonth
   });
 
+  const directChangeKwh = parsed.additionalMonthlyKwhDirect;
   const kwhValues = extractKwhValues(input.text ?? '');
-  if (kwhValues.length >= 2 && typeof input.powerW !== 'number' && typeof parsed.powerW !== 'number') {
+  if (typeof directChangeKwh !== 'number' && kwhValues.length >= 2 && typeof input.powerW !== 'number' && typeof parsed.powerW !== 'number') {
     const comparisons = kwhValues.slice(0, 8).map((monthlyKwh, index, values) => {
       const bill = calculateResidentialBill({
         monthlyKwh,
@@ -633,24 +643,30 @@ export function compareUsageScenarios(input: {
     };
   }
 
-  if (typeof parsed.additionalMonthlyKwhDirect === 'number' && typeof input.powerW !== 'number' && typeof parsed.powerW !== 'number') {
-    const directIncreaseScenarios = [200, 300, 400, 500].map((base) => {
+  if (typeof directChangeKwh === 'number' && typeof input.powerW !== 'number' && typeof parsed.powerW !== 'number') {
+    const changeKwh = directChangeKwh;
+    const baseScenarios = typeof parsed.baseMonthlyKwh === 'number' ? [parsed.baseMonthlyKwh] : [200, 300, 400, 500];
+    const directIncreaseScenarios = baseScenarios.map((base) => {
       const before = calculateResidentialBill({ monthlyKwh: base, voltageType: parsed.voltageType, season: parsed.season });
+      const afterMonthlyKwh = Math.max(0, base + changeKwh);
       const after = calculateResidentialBill({
-        monthlyKwh: base + parsed.additionalMonthlyKwhDirect!,
+        monthlyKwh: afterMonthlyKwh,
         voltageType: parsed.voltageType,
         season: parsed.season
       });
       return {
         assumedBaseMonthlyKwh: base,
-        afterMonthlyKwh: Number((base + parsed.additionalMonthlyKwhDirect!).toFixed(3)),
+        afterMonthlyKwh: Number(afterMonthlyKwh.toFixed(3)),
         estimatedIncreaseWon: after.estimatedTotalWon - before.estimatedTotalWon
       };
     });
     return {
       scenarios: [],
       directIncreaseScenarios,
-      baseAssumption: `기존 월 사용량을 모르는 상태에서 ${parsed.additionalMonthlyKwhDirect}kWh 증가분만 기준별로 비교`,
+      baseAssumption:
+        typeof parsed.baseMonthlyKwh === 'number'
+          ? `기존 월 사용량 ${parsed.baseMonthlyKwh}kWh에서 ${changeKwh}kWh 변화`
+          : `기존 월 사용량을 모르는 상태에서 ${changeKwh}kWh 변화분만 기준별로 비교`,
       recommendations: ['현재 월 사용량을 함께 넣으면 실제 누진 구간에 맞춘 증가액을 더 정확히 계산할 수 있습니다.']
     };
   }
@@ -700,13 +716,14 @@ export function compareUsageScenarios(input: {
         voltageType: parsed.voltageType,
         season: parsed.season
       });
+      const afterMonthlyKwh = Math.max(0, parsed.baseMonthlyKwh + additionalMonthlyKwh);
       const after = calculateResidentialBill({
-        monthlyKwh: parsed.baseMonthlyKwh + additionalMonthlyKwh,
+        monthlyKwh: afterMonthlyKwh,
         voltageType: parsed.voltageType,
         season: parsed.season
       });
       item.estimatedIncreaseWon = after.estimatedTotalWon - before.estimatedTotalWon;
-      item.assumedAfterMonthlyKwh = Number((parsed.baseMonthlyKwh + additionalMonthlyKwh).toFixed(3));
+      item.assumedAfterMonthlyKwh = Number(afterMonthlyKwh.toFixed(3));
     }
     return item;
   });
