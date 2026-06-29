@@ -90,7 +90,7 @@ function createServer(): McpServer {
     },
     {
       instructions:
-        'Use KEPCO Electric Agent tools as an API-first Korean electricity life assistant. Prefer public API backed tools for home-usage comparison, weather-based power advice, EV charging, solar/renewable sale checks, and integration status. If a public API key or endpoint is missing, return the tool result as unavailable instead of inventing demo data. For appliance questions, call the bill-estimation tool even when wattage or usage time is missing because the server has appliance presets and missing-field guidance. Do not claim to submit KEPCO civil-service requests, payment, auto-transfer, or confirmed EV charger reservations unless an authenticated partner integration is added.'
+        'Use KEPCO Electric Agent tools as an API-first Korean electricity life assistant. For any user question containing kWh, W, kW, wattage, monthly usage, electricity bill, bill difference, appliance use, minutes/hours/days of use, or usage comparison, call estimate_residential_electricity_bill or compare_electricity_usage_scenarios before answering. For solar sale, renewable sale, REC, SMP, PPA, net metering, grid interconnection, renewable contract status, or distributed generation questions, call analyze_renewable_energy_sale. For KEPCO ON/civil-service/FAQ/application-form questions, call the civil-service tools. Prefer public API backed tools for home-usage comparison, weather-based power advice, EV charging, solar/renewable sale checks, and integration status. If a public API is unavailable, return the tool result as unavailable instead of inventing demo data. Do not claim to submit KEPCO civil-service requests, payment, auto-transfer, or confirmed EV charger reservations unless an authenticated partner integration is added.'
     }
   );
 
@@ -99,7 +99,7 @@ function createServer(): McpServer {
     {
       title: 'Parse Electricity Usage Request',
       description:
-        'Use when the user asks in Korean about an appliance, electricity usage, kWh, 에어컨/건조기/전기차/히터 usage, or bill increase. Use this even when the user says they do not know the wattage. Extracts appliance name, default/preset power W when available, hours per day, days per month, current monthly kWh, voltage type, and missing fields before calculation.',
+        'Use when the user asks in Korean about an appliance, electricity usage, kWh, W/kW, monthly usage, 에어컨/건조기/전자레인지/공기청정기/전기장판/전기차/히터 usage, bill amount, or bill increase. Use this even when the user says they do not know the wattage. Extracts appliance name, default/preset power W when available, minutes/hours per day, days or uses per month, current monthly kWh, voltage type, and missing fields before calculation.',
       inputSchema: {
         text: z.string().min(2).max(2000).describe('Korean natural-language electricity usage or bill question.')
       },
@@ -119,7 +119,7 @@ function createServer(): McpServer {
     {
       title: 'Estimate Residential Electricity Bill',
       description:
-        'Always use for Korean electricity-bill or appliance questions like "월 350kWh 쓰면 얼마야?", "7월 460kWh면?", "에어컨 1800W 하루 8시간 틀면 전기요금 얼마 늘어?", "소비전력은 모르는데 건조기 한 달 쓰면 대략 계산 가능해?", "월 350kWh 쓰는데 건조기 쓰면?", or "전기차 충전하면 요금?". The tool has appliance presets and returns missing fields, so call it even when wattage, hours, or days are incomplete. Calculates current residential bill when only monthly kWh is given, or additional kWh and bill increase when appliance usage is given. This is an estimate, not an official bill.',
+        'Always use for Korean electricity-bill or appliance questions like "우리집 이번 달 350kWh 썼으면 얼마야?", "350kWh면 요금 얼마야?", "7월에 500kWh 나오면?", "250kWh랑 350kWh 차이", "건조기 1회 2kWh 한 달 20번", "900W 전자레인지 매일 10분", "공기청정기 24시간 켜두면", "전기장판 밤마다 틀면", "에어컨 1800W 하루 8시간 틀면 전기요금 얼마 늘어?", or "전기차 충전하면 요금?". The tool has appliance presets and returns missing fields, so call it even when wattage, hours, or days are incomplete. Calculates current residential bill when only monthly kWh is given, or additional kWh and bill increase when appliance usage is given. This is an estimate, not an official bill.',
       inputSchema: {
         text: z.string().min(2).max(2000).optional().describe('Natural-language question. The server will extract appliance, watts, hours, days, and base kWh when possible.'),
         applianceName: z.string().min(1).max(80).optional().describe('Optional appliance/product name such as 에어컨 or 건조기.'),
@@ -156,7 +156,7 @@ function createServer(): McpServer {
     {
       title: 'Compare Electricity Usage Scenarios',
       description:
-        'Use when the user wants optimal usage, comparison, or "몇 시간 줄이면 얼마나 아껴?" for appliances. Compares several hours-per-day scenarios and bill increase when current monthly kWh is known.',
+        'Use when the user wants optimal usage, scenario comparison, bill comparison, "몇 시간 줄이면 얼마나 아껴?", "250kWh랑 350kWh 차이", "작년보다 80kWh 더 썼는데 얼마나 늘어?", or appliance usage scenarios. Compares several hours-per-day/day-count scenarios and can compare multiple monthly kWh bill totals.',
       inputSchema: {
         text: z.string().min(2).max(2000).optional().describe('Natural-language usage comparison request.'),
         applianceName: z.string().min(1).max(80).optional().describe('Optional appliance name.'),
@@ -309,7 +309,7 @@ function createServer(): McpServer {
     {
       title: 'Analyze Renewable Energy Sale',
       description:
-        'Use when the user asks about selling electricity from solar/renewable generation, PPA, SMP/REC revenue, grid interconnection, renewable contract status, or whether a location is suitable for renewable power sale. Calls KEPCO Bigdata APIs for common codes, renewable contracts, and dispersed generation when KEPCO_BIGDATA_API_KEY is configured. Uses user-provided SMP/REC or configured KPX endpoints without inventing prices.',
+        'Use when the user asks about selling electricity from solar/renewable generation, 남는 전기 판매, 태양광 판매, REC, SMP, PPA, 요금상계거래, 발전사업, grid interconnection, 계통연계, 분산전원, renewable contract status, or whether a location is suitable for renewable power sale. Calls KEPCO Bigdata APIs for common codes, renewable contracts, and dispersed generation when KEPCO_BIGDATA_API_KEY is configured. Uses user-provided SMP/REC or configured KPX endpoints without inventing prices.',
       inputSchema: {
         text: z.string().min(2).max(2000).optional().describe('Natural-language renewable sale question.'),
         locationText: z.string().min(1).max(200).optional().describe('Installation/sale location such as address, city, district, or place name.'),
@@ -345,7 +345,7 @@ function createServer(): McpServer {
     {
       title: 'Classify KEPCO Civil Service',
       description:
-        'Use when the user asks about KEPCO/한전 민원, 한전ON, 명의변경, 이사정산, 전기사용신청, 증설, 자동이체, 청구서 변경, 복지할인, 고객번호, 요금납부, 정전, 전기고장, or 위험설비 신고. Returns the likely service type.',
+        'Use when the user asks about KEPCO/한전 민원, 한전ON, FAQ, 자주 묻는 질문, 명의변경, 이사정산, 전기사용신청, 증설, 계약변경, 자동이체, 청구서 변경, 복지할인, 고객번호, 요금납부, 정전, 전기고장, 위험설비 신고, 서류 작성, or 신청서 초안. Returns the likely service type.',
       inputSchema: {
         text: z.string().min(2).max(2000).describe('Korean natural-language KEPCO civil-service request.')
       },
@@ -365,7 +365,7 @@ function createServer(): McpServer {
     {
       title: 'Classify KEPCO Civil Service From 63 Items',
       description:
-        'Use when the user describes a KEPCO/한전ON civil-service task. Matches the request against the official 한전ON 민원신청 63-item catalog and returns ranked candidates, whether the action is available now, needs user auth/API, or needs partner agreement.',
+        'Use when the user describes a KEPCO/한전ON civil-service task, FAQ, or application-form request. Matches the request against the official 한전ON 민원신청 63-item catalog and returns ranked candidates, whether the action is available now, needs user auth/API, or needs partner agreement.',
       inputSchema: {
         text: z.string().min(2).max(2000).describe('Korean natural-language KEPCO civil-service request.'),
         limit: z.number().int().min(1).max(10).optional().describe('Maximum candidate count. Defaults to 5.')
@@ -409,7 +409,7 @@ function createServer(): McpServer {
     {
       title: 'Guide KEPCO Civil Service',
       description:
-        'Use for KEPCO 민원 guidance. It routes the request to 한전ON menus, lists required inputs and likely documents, explains why this MCP cannot auto-submit authenticated requests, and prepares a concise draft request text.',
+        'Use for KEPCO 민원/FAQ/application guidance. It routes the request to 한전ON menus, lists required inputs and likely documents, explains the current authenticated-submission boundary, and prepares a concise draft request text without claiming final submission.',
       inputSchema: {
         text: z.string().min(2).max(2000).describe('User request, e.g. "이사정산 하고 싶어", "명의변경 신청서 써줘", "자동이체 바꾸고 싶어".'),
         serviceType: civilServiceSchema.optional().describe('Optional known service type.'),
@@ -436,7 +436,7 @@ function createServer(): McpServer {
     {
       title: 'Prepare KEPCO Application Draft',
       description:
-        'Use when the user wants the MCP to fill out or draft a KEPCO civil-service request before submitting in 한전ON. It creates structured fields, missing-input checklist, confirmation checklist, and a Korean handoff text. It never performs real submission.',
+        'Use when the user wants the MCP to fill out, explain, or draft a KEPCO civil-service form before submitting in 한전ON. It creates structured fields, missing-input checklist, confirmation checklist, field meaning guidance, and a Korean handoff text. It never performs real submission.',
       inputSchema: {
         text: z.string().min(2).max(2000).describe('Civil-service request text.'),
         serviceType: civilServiceSchema.optional().describe('Optional known service type.'),

@@ -30,6 +30,30 @@ assert.ok(pureBill.currentBillSummary?.includes('70,640원'));
 assert.equal(pureBill.parsed.applianceName, undefined);
 assert.deepEqual(pureBill.parsed.missingFields, []);
 
+const casualMonthlyBill = estimateBill({
+  text: '우리집 이번 달 350kWh 썼으면 전기요금 얼마 정도 나와?'
+});
+assert.equal(casualMonthlyBill.currentBill?.estimatedTotalWon, 70640);
+assert.deepEqual(casualMonthlyBill.parsed.missingFields, []);
+
+const dryerPerUse = estimateBill({
+  text: '건조기 1회 2kWh 한 달 20번 쓰면 요금 얼마나 늘어?'
+});
+assert.equal(dryerPerUse.additionalMonthlyKwh, 40);
+assert.equal(dryerPerUse.parsed.perUseKwh, 2);
+assert.equal(dryerPerUse.parsed.usesPerMonth, 20);
+
+const microwaveMinutes = estimateBill({
+  text: '900W 전자레인지 매일 10분 쓰면 한 달 전기요금 얼마나 늘어?'
+});
+assert.equal(microwaveMinutes.additionalMonthlyKwh, 4.5);
+
+const monthlyKwhComparison = compareUsageScenarios({
+  text: '250kWh랑 350kWh 차이가 얼마야?'
+});
+assert.equal(monthlyKwhComparison.usageBillComparisons?.length, 2);
+assert.ok((monthlyKwhComparison.usageBillComparisons?.[1]?.differenceFromPreviousWon ?? 0) > 0);
+
 const julyBill = estimateBill({
   text: '7월에 460kWh 쓰면 전기요금이 얼마나 나와?'
 });

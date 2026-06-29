@@ -94,6 +94,26 @@ function numberFrom(text: string, patterns: RegExp[]): number | undefined {
   return undefined;
 }
 
+function wonAmountFrom(text: string, patterns: RegExp[]): number | undefined {
+  const normalized = text.replace(/,/g, '');
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    const value = match?.[1] ? Number.parseFloat(match[1]) : undefined;
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      continue;
+    }
+    const unit = match?.[2] ?? '';
+    if (unit.includes('만원')) {
+      return value * 10000;
+    }
+    if (unit.includes('천원')) {
+      return value * 1000;
+    }
+    return value;
+  }
+  return undefined;
+}
+
 function parseRenewableInput(input: RenewableSaleInput): RenewableSaleResult['parsed'] {
   const text = input.text ?? '';
   const genSrcCd = input.genSrcCd ?? (/풍력/.test(text) ? '3' : /소수력/.test(text) ? '2' : '1');
@@ -117,8 +137,18 @@ function parseRenewableInput(input: RenewableSaleInput): RenewableSaleResult['pa
         /(\d+(?:\.\d+)?)\s*kwh\s*\/?\s*년/i
       ]),
     recWeight: input.recWeight ?? numberFrom(text, [/가중치\s*(\d+(?:\.\d+)?)/]) ?? 1,
-    smpWonPerKwh: input.smpWonPerKwh ?? numberFrom(text, [/smp\s*(\d+(?:\.\d+)?)/i, /계통한계가격\s*(\d+(?:\.\d+)?)/]),
-    recPriceWonPerRec: input.recPriceWonPerRec ?? numberFrom(text.replace(/,/g, ''), [/rec\s*(\d+(?:\.\d+)?)/i])
+    smpWonPerKwh:
+      input.smpWonPerKwh ??
+      wonAmountFrom(text, [
+        /smp\s*(\d+(?:\.\d+)?)\s*(원|천원|만원)?/i,
+        /계통한계가격\s*(\d+(?:\.\d+)?)\s*(원|천원|만원)?/
+      ]),
+    recPriceWonPerRec:
+      input.recPriceWonPerRec ??
+      wonAmountFrom(text, [
+        /rec\s*(\d+(?:\.\d+)?)\s*(원|천원|만원)?/i,
+        /현물시장\s*(?:가격)?\s*(\d+(?:\.\d+)?)\s*(원|천원|만원)?/
+      ])
   };
 }
 

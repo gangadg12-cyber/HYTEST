@@ -309,6 +309,18 @@ export const APPLIANCE_PRESETS: Array<{
     applianceName: '전기차 충전',
     typicalPowerW: 7000,
     note: '전기차 충전은 주택용이 아닌 전기자동차 충전전력 요금제가 적용될 수 있습니다.'
+  },
+  {
+    aliases: ['전자레인지', '전자렌지', '렌지', '레인지'],
+    applianceName: '전자레인지',
+    typicalPowerW: 900,
+    note: '전자레인지는 실제 조리시간이 짧아 분 단위 사용시간을 시간으로 환산해 계산합니다.'
+  },
+  {
+    aliases: ['공기청정기', '공청기', '에어퓨리파이어'],
+    applianceName: '공기청정기',
+    typicalPowerW: 40,
+    note: '공기청정기는 자동/강풍 모드에 따라 소비전력이 달라질 수 있어 제품 표시 소비전력이 있으면 그 값을 우선 사용하세요.'
   }
 ];
 
