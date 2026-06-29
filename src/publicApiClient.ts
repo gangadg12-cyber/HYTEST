@@ -1,4 +1,5 @@
 import { XMLParser } from 'fast-xml-parser';
+import { getContestCredential } from './contestCredentials.js';
 
 export interface PublicApiFetchResult<T> {
   ok: boolean;
@@ -10,7 +11,7 @@ export interface PublicApiFetchResult<T> {
 
 export function firstConfiguredEnv(names: string[]): { name?: string; value?: string } {
   for (const name of names) {
-    const value = process.env[name];
+    const value = getContestCredential(name);
     if (value) {
       return { name, value };
     }

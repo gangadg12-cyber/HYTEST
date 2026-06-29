@@ -1,3 +1,5 @@
+import { getContestCredential } from './contestCredentials.js';
+
 export type PublicApiArea =
   | 'bill'
   | 'home_usage'
@@ -299,14 +301,13 @@ export function getPublicApis(input: { area?: PublicApiArea; feature?: string; c
 }
 
 export function getApiReadiness(input: { area?: PublicApiArea; feature?: string; env?: NodeJS.ProcessEnv } = {}): ApiReadiness[] {
-  const env = input.env ?? process.env;
   return getPublicApis(input).map((api) => {
     const alternatives = api.envVars;
     const ready =
       api.runtimeStatus === 'implemented' && alternatives.length === 0
         ? true
         : alternatives.length > 0
-          ? alternatives.some((name) => Boolean(env[name]))
+          ? alternatives.some((name) => Boolean(getContestCredential(name)))
           : api.runtimeStatus === 'catalog_only';
     return {
       code: api.code,
@@ -322,7 +323,7 @@ export function getApiReadiness(input: { area?: PublicApiArea; feature?: string;
 
 export function getConfiguredServiceKey(names: string[]): string | undefined {
   for (const name of names) {
-    const value = process.env[name];
+    const value = getContestCredential(name);
     if (value) {
       return value;
     }

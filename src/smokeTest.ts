@@ -161,10 +161,6 @@ assert.equal(liveCandidate?.connectorType, 'DC콤보');
 assert.equal(liveCandidate?.status, 'available');
 assert.ok(typeof liveCandidate?.distanceKm === 'number');
 
-const originalEvKey = process.env.EV_CHARGER_SERVICE_KEY;
-const originalDataGoKrKey = process.env.DATA_GO_KR_SERVICE_KEY;
-delete process.env.EV_CHARGER_SERVICE_KEY;
-delete process.env.DATA_GO_KR_SERVICE_KEY;
 const liveDisabled = await planEvChargingVisitWithLiveData({
   locationText: '서울 강남구',
   connectorType: 'DC콤보',
@@ -174,22 +170,6 @@ assert.equal(liveDisabled.dataMode, 'unavailable');
 assert.equal(liveDisabled.candidates.length, 0);
 assert.equal(liveDisabled.planA, undefined);
 assert.ok(liveDisabled.visitPlanText.includes('임의 충전소를 추천하지 않습니다'));
-const liveNoKey = await planEvChargingVisitWithLiveData({
-  locationText: '서울 강남구',
-  connectorType: 'DC콤보'
-});
-assert.equal(liveNoKey.dataMode, 'unavailable');
-assert.equal(liveNoKey.liveApi?.serviceKeyConfigured, false);
-if (originalEvKey === undefined) {
-  delete process.env.EV_CHARGER_SERVICE_KEY;
-} else {
-  process.env.EV_CHARGER_SERVICE_KEY = originalEvKey;
-}
-if (originalDataGoKrKey === undefined) {
-  delete process.env.DATA_GO_KR_SERVICE_KEY;
-} else {
-  process.env.DATA_GO_KR_SERVICE_KEY = originalDataGoKrKey;
-}
 
 const chademoPlan = planEvChargingVisit({
   text: '30분 뒤 영동고속도로 강릉방향에서 차데모 충전소만 찾아줘',

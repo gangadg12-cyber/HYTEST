@@ -114,7 +114,7 @@ KPX_SMP_DEMAND_ENDPOINT=
 KPX_REC_SPOT_ENDPOINT=
 ```
 
-When `EV_CHARGER_SERVICE_KEY` and `KAKAO_REST_API_KEY` are set, `plan_ev_charging_visit` can resolve a user-provided place name/address, call the public KECO EV charger info/status APIs by region code, and rank real charger candidates by distance, status, output, and connector match. The public API does not accept arbitrary natural-language address or coordinate filters directly, so the MCP resolves location through Kakao and filters/ranks the returned official candidates internally. No demo key or fabricated charger fallback is embedded.
+For the PlayMCP contest build, public API keys are embedded in `src/contestCredentials.ts` because the KC/PlayMCP build UI does not provide a runtime secret field. `plan_ev_charging_visit` can resolve a user-provided place name/address, call the public KECO EV charger info/status APIs by region code, and rank real charger candidates by distance, status, output, and connector match. The public API does not accept arbitrary natural-language address or coordinate filters directly, so the MCP resolves location through Kakao and filters/ranks the returned official candidates internally. It still never fabricates charger candidates when the public API fails.
 
 API-first rule: tools never fabricate public API results. When the needed public API key, endpoint mapping, coordinate, or benchmark is missing, the tool returns `dataMode: "unavailable"` with required API codes instead of demo data.
 

@@ -1,4 +1,5 @@
 import { XMLParser } from 'fast-xml-parser';
+import { getContestCredential } from './contestCredentials.js';
 import { resolveKakaoLocation, type KakaoLocationResult } from './kakaoLocal.js';
 import { getUserVisibleOfficialDataSources, type IntegrationBoundary, type OfficialDataSource } from './kepcoData.js';
 
@@ -642,7 +643,7 @@ function buildKecoUrl(endpoint: string, input: EvChargingPlanInput, serviceKey: 
 }
 
 function getEvChargerServiceKey(): string | undefined {
-  return process.env.EV_CHARGER_SERVICE_KEY || process.env.DATA_GO_KR_SERVICE_KEY;
+  return getContestCredential('EV_CHARGER_SERVICE_KEY') || getContestCredential('DATA_GO_KR_SERVICE_KEY');
 }
 
 function hasEvChargerServiceKey(): boolean {
