@@ -275,7 +275,7 @@ function createServer(): McpServer {
         year: z.number().int().min(2000).max(2100).optional().describe('Optional comparison year for KEPCO houseAve.do. Defaults to previous year when omitted.'),
         month: z.number().int().min(1).max(12).optional().describe('Billing/comparison month.'),
         metroCd: z.string().min(2).max(2).optional().describe('Optional KEPCO metro code from commonCode.do.'),
-        cityCd: z.string().min(1).max(5).optional().describe('Optional KEPCO city code from commonCode.do.'),
+        cityCd: z.string().min(1).max(5).optional().describe('Optional KEPCO legal-dong city code from commonCode.do codeTy=lglDngCityCd for houseAve.do.'),
         season: seasonSchema.optional().describe('Optional season override.'),
         voltageType: voltageSchema.optional().describe('Residential voltage type. Defaults to low_voltage.'),
         benchmarkMonthlyKwh: z.number().min(0).max(10000).optional().describe('Optional public average benchmark. If omitted, the server attempts KEPCO houseAve.do when region is available.'),

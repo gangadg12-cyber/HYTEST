@@ -260,7 +260,7 @@ export async function resolveKepcoRegionCodes(input: {
     };
   }
 
-  const cityCodes = await fetchKepcoCommonCodes('cityCd');
+  const cityCodes = await fetchKepcoCommonCodes('lglDngCityCd');
   const city = cityCodes.records
     .filter((record) => record.uppoCd === metro.code)
     .find((record) => regionMatches(regionText, record.codeNm));
