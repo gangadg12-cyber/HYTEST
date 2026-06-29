@@ -32,6 +32,7 @@ export interface ElectricLifeRouterInput {
   direction?: string;
   arrivalInMinutes?: number;
   desiredKwh?: number;
+  vehicleModel?: string;
   connectorType?: string;
   minimumOutputKw?: number;
   candidates?: ChargerCandidateInput[];
@@ -70,6 +71,7 @@ export interface RoutedIntentResult {
   confidence: 'high' | 'medium' | 'low';
   reason: string;
   answerSummary?: string;
+  userFacingSummary: string[];
   clarifyingQuestions: string[];
   result?: unknown;
 }
@@ -77,6 +79,7 @@ export interface RoutedIntentResult {
 export interface ElectricLifeRouterResult {
   originalText: string;
   summary: string;
+  userFacingSummary: string[];
   intents: RoutedIntentResult[];
   nextQuestions: string[];
   routingNotes: string[];
@@ -140,7 +143,7 @@ function detectIntents(text: string): IntentCandidate[] {
   } else if (hasRenewableSaleWord) {
     candidates.push({ type: 'renewable_sale', confidence: 'medium', reason: '발전 판매/계통/REC/SMP 표현 감지' });
   }
-  if (hasSolarWord && !hasRenewableSaleWord) {
+  if (hasSolarWord && (!hasRenewableSaleWord || hasAny(text, [/설치|자가소비|절감|발전량|패널/]))) {
     candidates.push({ type: 'solar_region', confidence: 'medium', reason: '태양광 설치/발전량/절감 검토 표현 감지' });
   }
   if (hasWeatherWord && (hasBillWord || hasUsageUnit)) {
@@ -226,6 +229,19 @@ function summaryFromResult(result: unknown): string | undefined {
   return undefined;
 }
 
+function userFacingSummaryFromResult(result: unknown): string[] {
+  if (!result || typeof result !== 'object') {
+    return [];
+  }
+  const record = result as Record<string, unknown>;
+  const userFacingSummary = record.userFacingSummary;
+  if (Array.isArray(userFacingSummary)) {
+    return userFacingSummary.map(String).filter(Boolean).slice(0, 5);
+  }
+  const fallback = summaryFromResult(result);
+  return fallback ? fallback.split('\n').map((line) => line.trim()).filter(Boolean).slice(0, 3) : [];
+}
+
 async function runIntent(candidate: IntentCandidate, input: ElectricLifeRouterInput): Promise<RoutedIntentResult> {
   const common = { text: input.text };
   let result: unknown;
@@ -287,6 +303,7 @@ async function runIntent(candidate: IntentCandidate, input: ElectricLifeRouterIn
       direction: input.direction,
       arrivalInMinutes: input.arrivalInMinutes,
       desiredKwh: input.desiredKwh,
+      vehicleModel: input.vehicleModel,
       connectorType: input.connectorType,
       minimumOutputKw: input.minimumOutputKw,
       candidates: input.candidates,
@@ -336,6 +353,7 @@ async function runIntent(candidate: IntentCandidate, input: ElectricLifeRouterIn
     confidence: candidate.confidence,
     reason: candidate.reason,
     answerSummary: summaryFromResult(result),
+    userFacingSummary: userFacingSummaryFromResult(result),
     clarifyingQuestions,
     result
   };
@@ -351,6 +369,31 @@ function buildSummary(intents: RoutedIntentResult[]): string {
   return `요청을 ${intents.length}개 intent로 분해했습니다. 처리 완료 ${answered}개, 추가정보 필요 ${needsMore}개, API/데이터 unavailable ${unavailable}개입니다.`;
 }
 
+const ROUTED_INTENT_LABELS: Record<RoutedIntentType, string> = {
+  electric_bill: '전기요금',
+  usage_comparison: '사용량 비교',
+  home_usage_comparison: '가구 평균 비교',
+  civil_service: '한전 민원',
+  ev_charging: 'EV 충전',
+  renewable_sale: '신재생 판매',
+  solar_region: '태양광',
+  weather_power: '날씨/전력',
+  unknown: '미분류'
+};
+
+function buildRouterUserFacingSummary(intents: RoutedIntentResult[], nextQuestions: string[]): string[] {
+  const summary = intents
+    .flatMap((intent) => {
+      const firstLine = intent.userFacingSummary[0] ?? intent.answerSummary?.split('\n')[0];
+      return firstLine ? [`${ROUTED_INTENT_LABELS[intent.type]}: ${firstLine}`] : [];
+    })
+    .slice(0, 4);
+  if (nextQuestions.length > 0) {
+    summary.push(`추가 확인: ${nextQuestions.slice(0, 2).join(' / ')}`);
+  }
+  return summary.slice(0, 5);
+}
+
 export async function handleElectricLifeRequest(input: ElectricLifeRouterInput): Promise<ElectricLifeRouterResult> {
   const text = input.text.trim();
   const candidates = detectIntents(text);
@@ -361,11 +404,13 @@ export async function handleElectricLifeRequest(input: ElectricLifeRouterInput):
       status: 'not_matched',
       confidence: 'low',
       reason: '지원 도메인 키워드가 부족합니다.',
+      userFacingSummary: ['전기요금, 한전 민원, EV 충전소, 태양광/신재생 판매 중 어떤 요청인지 먼저 확인해야 합니다.'],
       clarifyingQuestions: ['전기요금, 한전 민원, EV 충전소, 태양광/신재생 판매 중 어떤 내용을 처리할지 알려주세요.']
     };
     return {
       originalText: text,
       summary: buildSummary([unknown]),
+      userFacingSummary: buildRouterUserFacingSummary([unknown], unknown.clarifyingQuestions),
       intents: [unknown],
       nextQuestions: unknown.clarifyingQuestions,
       routingNotes: ['이 라우터는 PlayMCP LLM의 다중 tool 선택 부담을 줄이기 위한 서버 내부 intent 분해 계층입니다.'],
@@ -379,6 +424,7 @@ export async function handleElectricLifeRequest(input: ElectricLifeRouterInput):
   return {
     originalText: text,
     summary: buildSummary(intents),
+    userFacingSummary: buildRouterUserFacingSummary(intents, nextQuestions),
     intents,
     nextQuestions,
     routingNotes: [

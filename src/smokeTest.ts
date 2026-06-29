@@ -7,11 +7,19 @@ import {
   listKepcoCivilServiceCatalog,
   prepareApplicationDraft
 } from './civilService.js';
-import { inferEvZcode, inferEvZscode, mapKecoChargerInfoItemToCandidate, planEvChargingVisit, planEvChargingVisitWithLiveData } from './evCharging.js';
+import {
+  inferEvConnectorFromVehicleModel,
+  inferEvZcode,
+  inferEvZscode,
+  mapKecoChargerInfoItemToCandidate,
+  planEvChargingVisit,
+  planEvChargingVisitWithLiveData
+} from './evCharging.js';
 import { compareHomeElectricityUsage } from './homeUsage.js';
 import { getOfficialDataSourcesResult } from './kepcoData.js';
 import { getApiReadiness, getPublicApis } from './publicApis.js';
 import { handleElectricLifeRequest } from './requestRouter.js';
+import { ROUTER_REGRESSION_QUESTIONS } from './routerQuestionSet.js';
 import { analyzeRenewableEnergySale } from './renewableSale.js';
 import { checkSolarRegion } from './solar.js';
 import { adviseWeatherPowerUsage } from './weatherPower.js';
@@ -28,6 +36,7 @@ const pureBill = estimateBill({
 });
 assert.equal(pureBill.currentBill?.estimatedTotalWon, 70640);
 assert.ok(pureBill.currentBillSummary?.includes('70,640원'));
+assert.ok(pureBill.userFacingSummary.length > 0);
 assert.equal(pureBill.parsed.applianceName, undefined);
 assert.deepEqual(pureBill.parsed.missingFields, []);
 
@@ -169,6 +178,8 @@ assert.equal(draft.canSubmit, false);
 assert.equal(draft.serviceType, 'move_settlement');
 assert.ok(draft.missingInputs.includes('신청자 성명'));
 assert.ok(draft.answerSummary.includes('최종 신청'));
+assert.ok(draft.userFacingSummary.length <= 4);
+assert.ok(draft.fieldGuide.customerNumber.includes('전기사용계약'));
 
 const evPlan = planEvChargingVisit({
   text: '30분 뒤 영동고속도로 강릉방향에서 40kWh 충전하고 싶어',
@@ -194,6 +205,29 @@ assert.equal(evPlan.dataMode, 'provided_candidates');
 assert.equal(evPlan.reservationBoundary.integrationBoundary, 'needs_partner_agreement');
 assert.ok(evPlan.officialDataSources.some((source) => source.id === 'keco_ev_charger_api'));
 assert.ok(!evPlan.officialDataSources.some((source) => source.id === 'ocpp_standard'));
+assert.ok(evPlan.userFacingSummary.length > 0);
+
+const ioniqConnector = inferEvConnectorFromVehicleModel('아이오닉5로 충전소 찾아줘');
+assert.equal(ioniqConnector?.connectorType, 'DC콤보');
+
+const evPlanByVehicleModel = planEvChargingVisit({
+  text: '아이오닉5로 서울 강남구 근처 급속 충전소 찾아줘',
+  candidates: [
+    {
+      name: '강남 테스트 충전소',
+      address: '서울특별시 강남구 테헤란로 1',
+      connectorType: 'DC콤보',
+      outputKw: 100,
+      status: 'available',
+      availableCount: 1,
+      totalCount: 1,
+      statusUpdatedAt: '20260624090000'
+    }
+  ]
+});
+assert.equal(evPlanByVehicleModel.parsed.vehicleConnector?.vehicleModel, '현대 아이오닉 5');
+assert.equal(evPlanByVehicleModel.parsed.connectorType, 'DC콤보');
+assert.ok(evPlanByVehicleModel.planA);
 
 assert.equal(inferEvZcode('서울 강남구'), '11');
 assert.deepEqual(inferEvZscode('서울 강남구'), { zcode: '11', zscode: '11680' });
@@ -333,6 +367,7 @@ const routedBillAndEv = await handleElectricLifeRequest({
 assert.ok(routedBillAndEv.intents.some((intent) => intent.type === 'usage_comparison' || intent.type === 'electric_bill'));
 assert.ok(routedBillAndEv.intents.some((intent) => intent.type === 'ev_charging'));
 assert.ok(Array.isArray(routedBillAndEv.nextQuestions));
+assert.ok(routedBillAndEv.userFacingSummary.length > 0);
 
 const routedCivilAndRenewable = await handleElectricLifeRequest({
   text: '태양광 판매 수익도 계산하고 한전 명의변경 신청서에 뭘 적어야 하는지도 알려줘',
@@ -343,6 +378,22 @@ const routedCivilAndRenewable = await handleElectricLifeRequest({
 });
 assert.ok(routedCivilAndRenewable.intents.some((intent) => intent.type === 'renewable_sale'));
 assert.ok(routedCivilAndRenewable.intents.some((intent) => intent.type === 'civil_service'));
+assert.ok(routedCivilAndRenewable.userFacingSummary.length > 0);
+
+assert.equal(ROUTER_REGRESSION_QUESTIONS.length, 50);
+for (const question of ROUTER_REGRESSION_QUESTIONS) {
+  const routed = await handleElectricLifeRequest({
+    text: question.text,
+    useLiveApi: false
+  });
+  for (const expectedIntent of question.expectedIntents) {
+    assert.ok(
+      routed.intents.some((intent) => intent.type === expectedIntent),
+      `${question.id} should include ${expectedIntent}; got ${routed.intents.map((intent) => intent.type).join(', ')}`
+    );
+  }
+  assert.ok(routed.userFacingSummary.length > 0, `${question.id} should return userFacingSummary`);
+}
 
 const sources = getOfficialDataSourcesResult();
 assert.ok(sources.markdownSummary.includes('https://online.kepco.co.kr/CUM083D00'));

@@ -57,6 +57,7 @@ export interface BillEstimateResult {
   afterBill?: BillBreakdown;
   increaseWon?: number;
   increasePercent?: number;
+  userFacingSummary: string[];
   marginalScenarios?: Array<{
     assumedBaseMonthlyKwh: number;
     afterMonthlyKwh: number;
@@ -478,6 +479,28 @@ function summarizeBill(prefix: string, bill: BillBreakdown): string {
   ].join(' ');
 }
 
+function buildBillUserFacingSummary(result: {
+  currentBillSummary?: string;
+  additionalMonthlyKwh?: number;
+  increaseWon?: number;
+  clarifyingQuestions?: string[];
+}): string[] {
+  const summary: string[] = [];
+  if (result.currentBillSummary) {
+    summary.push(result.currentBillSummary.split(' 기준입니다.')[0] ?? result.currentBillSummary);
+  }
+  if (typeof result.additionalMonthlyKwh === 'number') {
+    summary.push(`추가 사용량은 월 ${result.additionalMonthlyKwh}kWh로 계산했습니다.`);
+  }
+  if (typeof result.increaseWon === 'number') {
+    summary.push(`예상 요금 변화는 ${result.increaseWon.toLocaleString('ko-KR')}원입니다.`);
+  }
+  if (result.clarifyingQuestions?.length) {
+    summary.push(`추가 확인: ${result.clarifyingQuestions.slice(0, 2).join(' / ')}`);
+  }
+  return summary.slice(0, 4);
+}
+
 function deriveAdditionalKwh(parsed: ParsedUsageRequest): { additionalMonthlyKwh?: number; usageFormula?: string } {
   if (typeof parsed.additionalMonthlyKwhDirect === 'number') {
     return {
@@ -513,6 +536,7 @@ export function estimateBill(input: BillEstimateInput): BillEstimateResult {
   const result: BillEstimateResult = {
     parsed,
     additionalMonthlyKwh,
+    userFacingSummary: [],
     clarifyingQuestions: buildClarifyingQuestionsFromMissingFields(parsed.missingFields),
     recommendations: buildRecommendations(parsed, additionalMonthlyKwh),
     tariffBasis: {
@@ -537,6 +561,7 @@ export function estimateBill(input: BillEstimateInput): BillEstimateResult {
   }
 
   if (typeof additionalMonthlyKwh !== 'number') {
+    result.userFacingSummary = buildBillUserFacingSummary(result);
     return result;
   }
 
@@ -576,6 +601,7 @@ export function estimateBill(input: BillEstimateInput): BillEstimateResult {
     });
   }
 
+  result.userFacingSummary = buildBillUserFacingSummary(result);
   return result;
 }
 

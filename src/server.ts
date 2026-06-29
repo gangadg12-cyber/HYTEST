@@ -104,6 +104,7 @@ function createServer(): McpServer {
         direction: z.string().min(1).max(80).optional().describe('Optional highway direction.'),
         arrivalInMinutes: z.number().min(0).max(1440).optional().describe('Optional estimated arrival time in minutes.'),
         desiredKwh: z.number().positive().max(300).optional().describe('Optional desired EV charging amount in kWh.'),
+        vehicleModel: z.string().min(1).max(100).optional().describe('Optional EV vehicle model such as 아이오닉5, EV6, 니로EV, 모델Y, or 볼트EV. Used to infer connector type when connectorType is missing.'),
         connectorType: z.string().min(1).max(80).optional().describe('Optional exact EV connector type such as DC콤보, CHAdeMO, or AC3상.'),
         minimumOutputKw: z.number().positive().max(1000).optional().describe('Optional minimum charger output.'),
         candidates: z.array(chargerCandidateSchema).max(20).optional().describe('Optional EV charging candidates.'),
@@ -542,6 +543,7 @@ function createServer(): McpServer {
         direction: z.string().min(1).max(80).optional().describe('Direction, e.g. 강릉방향.'),
         arrivalInMinutes: z.number().min(0).max(1440).optional().describe('Estimated arrival time in minutes.'),
         desiredKwh: z.number().positive().max(300).optional().describe('Desired charge amount in kWh.'),
+        vehicleModel: z.string().min(1).max(100).optional().describe('EV vehicle model such as 아이오닉5, EV6, 니로EV, 모델Y, or 볼트EV. Used to infer connector type when connectorType is missing.'),
         connectorType: z
           .string()
           .min(1)

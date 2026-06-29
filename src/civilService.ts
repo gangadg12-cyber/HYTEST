@@ -25,6 +25,7 @@ export interface CivilServiceGuideResult {
   serviceType: CivilServiceType;
   labelKo: string;
   answerSummary: string;
+  userFacingSummary: string[];
   confidence: 'high' | 'medium' | 'low';
   matchedCivilServiceItems: CivilServiceMatch[];
   boundary: IntegrationBoundary;
@@ -261,7 +262,6 @@ function buildAnswerSummary(input: {
   requiredInputs: string[];
   likelyDocuments: string[];
   missingInputs: string[];
-  autoSubmitReason: string;
 }): string {
   const boundaryText =
     input.boundary === 'available_now'
@@ -273,12 +273,46 @@ function buildAnswerSummary(input: {
   return [
     `${input.labelKo}: ${input.description}`,
     `공식 경로: ${input.kepcoOnPath}`,
-    `준비 정보: ${input.requiredInputs.length > 0 ? input.requiredInputs.join(', ') : '별도 입력값 없음'}`,
-    `예상 서류: ${input.likelyDocuments.length > 0 ? input.likelyDocuments.join(', ') : '상황별 확인 필요'}`,
+    `준비 정보: ${input.requiredInputs.length > 0 ? input.requiredInputs.slice(0, 4).join(', ') : '별도 입력값 없음'}`,
+    `예상 서류: ${input.likelyDocuments.length > 0 ? input.likelyDocuments.slice(0, 4).join(', ') : '상황별 확인 필요'}`,
     input.missingInputs.length > 0 ? `추가로 필요한 정보: ${input.missingInputs.join(', ')}` : '필수 입력값 초안은 대부분 채워졌습니다.',
-    boundaryText,
-    input.autoSubmitReason
+    boundaryText
   ].join('\n');
+}
+
+function buildCivilUserFacingSummary(input: {
+  labelKo: string;
+  kepcoOnPath: string;
+  boundary: IntegrationBoundary;
+  missingInputs: string[];
+  directUrl: string;
+}): string[] {
+  const boundaryText =
+    input.boundary === 'available_now'
+      ? 'MCP 안에서 안내/초안 작성까지 바로 처리 가능합니다.'
+      : input.boundary === 'needs_user_auth_or_api'
+        ? '최종 제출은 한전ON 본인확인 또는 공식 API 권한이 필요합니다.'
+        : '실제 처리는 기관/사업자 협약 API가 필요합니다.';
+  return [
+    `민원 유형: ${input.labelKo}`,
+    `공식 경로: ${input.kepcoOnPath}`,
+    input.missingInputs.length > 0 ? `추가 입력: ${input.missingInputs.join(', ')}` : '추가 입력: 현재 초안 기준 대부분 확인됨',
+    boundaryText,
+    `handoff: ${input.directUrl}`
+  ].slice(0, 5);
+}
+
+function buildCivilFieldGuide(): Record<string, string> {
+  return {
+    serviceType: '신청하려는 한전 민원 종류입니다.',
+    officialPath: '한전ON에서 사용자가 최종 확인하거나 제출할 메뉴 경로입니다.',
+    applicantName: '민원을 신청하는 사람의 이름입니다.',
+    phone: '한전 또는 담당자가 연락할 수 있는 연락처입니다.',
+    customerNumber: '전기사용계약을 식별하는 번호입니다. 모르면 주소로 대체 확인합니다.',
+    address: '전기를 사용하거나 민원이 발생한 장소입니다.',
+    preferredDate: '이사 정산, 사용 시작, 처리 희망일처럼 날짜가 필요한 민원에 사용합니다.',
+    details: '사용자가 요청한 상황 설명과 민원 처리에 필요한 추가 내용입니다.'
+  };
 }
 
 export function guideCivilService(input: CivilServiceInput): CivilServiceGuideResult {
@@ -300,14 +334,20 @@ export function guideCivilService(input: CivilServiceInput): CivilServiceGuideRe
     boundary,
     requiredInputs,
     likelyDocuments,
-    missingInputs,
-    autoSubmitReason
+    missingInputs
   });
 
   return {
     serviceType: inferred.serviceType,
     labelKo: guide.labelKo,
     answerSummary,
+    userFacingSummary: buildCivilUserFacingSummary({
+      labelKo: guide.labelKo,
+      kepcoOnPath,
+      boundary,
+      missingInputs,
+      directUrl: guide.directUrl
+    }),
     confidence: inferred.confidence,
     matchedCivilServiceItems: catalog.matches,
     boundary,
@@ -335,7 +375,9 @@ export function prepareApplicationDraft(input: CivilServiceInput): {
   serviceType: CivilServiceType;
   title: string;
   answerSummary: string;
+  userFacingSummary: string[];
   draftFields: Record<string, string>;
+  fieldGuide: Record<string, string>;
   matchedCivilServiceItems: CivilServiceMatch[];
   boundary: IntegrationBoundary;
   missingInputs: string[];
@@ -352,6 +394,12 @@ export function prepareApplicationDraft(input: CivilServiceInput): {
     serviceType: guide.serviceType,
     title: `${source.labelKo} 신청서 초안`,
     answerSummary: guide.answerSummary,
+    userFacingSummary: [
+      `신청서 초안: ${source.labelKo}`,
+      guide.missingInputs.length > 0 ? `추가 입력 필요: ${guide.missingInputs.join(', ')}` : '작성 상태: 기본 초안 작성 가능',
+      `공식 경로: ${guide.kepcoOnPath}`,
+      '최종 제출은 한전ON 본인확인 후 진행'
+    ],
     draftFields: {
       serviceType: source.labelKo,
       officialPath: guide.kepcoOnPath,
@@ -362,6 +410,7 @@ export function prepareApplicationDraft(input: CivilServiceInput): {
       preferredDate: input.preferredDate ?? '미입력',
       details: input.details ?? input.text
     },
+    fieldGuide: buildCivilFieldGuide(),
     matchedCivilServiceItems: guide.matchedCivilServiceItems,
     boundary: guide.boundary,
     missingInputs: guide.missingInputs,

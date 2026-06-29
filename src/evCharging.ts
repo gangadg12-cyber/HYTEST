@@ -5,6 +5,14 @@ import { getUserVisibleOfficialDataSources, type IntegrationBoundary, type Offic
 
 export type ChargerStatus = 'available' | 'charging' | 'reserved' | 'faulted' | 'unknown';
 
+export interface EvVehicleConnectorMatch {
+  vehicleModel: string;
+  connectorType: string;
+  confidence: 'high' | 'medium' | 'low';
+  sourceLabel: string;
+  note: string;
+}
+
 export interface ChargerCandidateInput {
   name: string;
   address?: string;
@@ -41,6 +49,7 @@ export interface EvChargingPlanInput {
   direction?: string;
   arrivalInMinutes?: number;
   desiredKwh?: number;
+  vehicleModel?: string;
   connectorType?: string;
   minimumOutputKw?: number;
   candidates?: ChargerCandidateInput[];
@@ -84,6 +93,8 @@ export interface EvChargingPlanResult {
     direction?: string;
     arrivalInMinutes: number;
     desiredKwh?: number;
+    vehicleModel?: string;
+    vehicleConnector?: EvVehicleConnectorMatch;
     connectorType?: string;
     minimumOutputKw?: number;
   };
@@ -103,6 +114,7 @@ export interface EvChargingPlanResult {
   planB?: EvChargingPlanCandidate;
   candidates: EvChargingPlanCandidate[];
   visitPlanText: string;
+  userFacingSummary: string[];
   clarifyingQuestions: string[];
   reservationBoundary: {
     currentMvp: string;
@@ -169,6 +181,104 @@ const ZSCODE_ALIASES: Array<{ zcode: string; zscode: string; aliases: string[] }
   { zcode: '51', zscode: '51130', aliases: ['원주시', '원주', '문막', '문막휴게소'] }
 ];
 
+const EV_VEHICLE_CONNECTOR_PROFILES: Array<EvVehicleConnectorMatch & { aliases: string[] }> = [
+  {
+    vehicleModel: '현대 아이오닉 5',
+    aliases: ['아이오닉5', '아이오닉 5', 'ioniq5', 'ioniq 5'],
+    connectorType: 'DC콤보',
+    confidence: 'high',
+    sourceLabel: 'Domestic EV connector metadata maintained in MCP source',
+    note: '국내 판매 주요 사양 기준의 급속 충전 커넥터입니다.'
+  },
+  {
+    vehicleModel: '현대 아이오닉 6',
+    aliases: ['아이오닉6', '아이오닉 6', 'ioniq6', 'ioniq 6'],
+    connectorType: 'DC콤보',
+    confidence: 'high',
+    sourceLabel: 'Domestic EV connector metadata maintained in MCP source',
+    note: '국내 판매 주요 사양 기준의 급속 충전 커넥터입니다.'
+  },
+  {
+    vehicleModel: '기아 EV6',
+    aliases: ['ev6', '기아ev6', '기아 ev6'],
+    connectorType: 'DC콤보',
+    confidence: 'high',
+    sourceLabel: 'Domestic EV connector metadata maintained in MCP source',
+    note: '국내 판매 주요 사양 기준의 급속 충전 커넥터입니다.'
+  },
+  {
+    vehicleModel: '기아 니로 EV',
+    aliases: ['니로ev', '니로 ev', 'niro ev'],
+    connectorType: 'DC콤보',
+    confidence: 'high',
+    sourceLabel: 'Domestic EV connector metadata maintained in MCP source',
+    note: '국내 판매 주요 사양 기준의 급속 충전 커넥터입니다.'
+  },
+  {
+    vehicleModel: '현대 코나 일렉트릭',
+    aliases: ['코나ev', '코나 ev', '코나일렉트릭', 'kona electric'],
+    connectorType: 'DC콤보',
+    confidence: 'high',
+    sourceLabel: 'Domestic EV connector metadata maintained in MCP source',
+    note: '국내 판매 주요 사양 기준의 급속 충전 커넥터입니다.'
+  },
+  {
+    vehicleModel: '쉐보레 볼트 EV',
+    aliases: ['볼트ev', '볼트 ev', 'bolt ev'],
+    connectorType: 'DC콤보',
+    confidence: 'high',
+    sourceLabel: 'Domestic EV connector metadata maintained in MCP source',
+    note: '국내 판매 주요 사양 기준의 급속 충전 커넥터입니다.'
+  },
+  {
+    vehicleModel: '테슬라 모델 3/Y',
+    aliases: ['모델3', '모델 3', '모델y', '모델 y', 'model3', 'model 3', 'modely', 'model y', '테슬라'],
+    connectorType: 'DC콤보',
+    confidence: 'medium',
+    sourceLabel: 'Domestic EV connector metadata maintained in MCP source',
+    note: '국내 공용 급속 충전소 이용은 차량 연식/어댑터/충전소 정책에 따라 달라질 수 있습니다.'
+  },
+  {
+    vehicleModel: '기아 레이 EV 구형',
+    aliases: ['레이ev', '레이 ev', 'ray ev'],
+    connectorType: 'CHAdeMO',
+    confidence: 'medium',
+    sourceLabel: 'Domestic EV connector metadata maintained in MCP source',
+    note: '구형 차종은 연식별 커넥터 차이가 있을 수 있어 실제 차량 포트를 확인해야 합니다.'
+  },
+  {
+    vehicleModel: '기아 쏘울 EV 1세대',
+    aliases: ['쏘울ev', '쏘울 ev', 'soul ev'],
+    connectorType: 'CHAdeMO',
+    confidence: 'medium',
+    sourceLabel: 'Domestic EV connector metadata maintained in MCP source',
+    note: '구형 차종은 연식별 커넥터 차이가 있을 수 있어 실제 차량 포트를 확인해야 합니다.'
+  },
+  {
+    vehicleModel: '르노 SM3 Z.E.',
+    aliases: ['sm3 ze', 'sm3 z.e', 'sm3 전기차', 'sm3ze'],
+    connectorType: 'AC3상',
+    confidence: 'medium',
+    sourceLabel: 'Domestic EV connector metadata maintained in MCP source',
+    note: 'AC3상 중심의 구형 차종이라 급속 DC콤보 후보와 구분해야 합니다.'
+  }
+];
+
+export function inferEvConnectorFromVehicleModel(text?: string): EvVehicleConnectorMatch | undefined {
+  if (!text) {
+    return undefined;
+  }
+  const compactText = text.replace(/\s+/g, '').toLowerCase();
+  const profile = EV_VEHICLE_CONNECTOR_PROFILES.find((entry) =>
+    entry.aliases.some((alias) => compactText.includes(alias.replace(/\s+/g, '').toLowerCase()))
+  );
+  if (!profile) {
+    return undefined;
+  }
+  const { aliases: _aliases, ...match } = profile;
+  return match;
+}
+
 export function inferEvZcode(locationText?: string): string | undefined {
   if (!locationText) {
     return undefined;
@@ -210,6 +320,15 @@ function normalizeConnectorType(connectorType?: string): string | undefined {
   if (!connectorType) {
     return undefined;
   }
+  if (/차데모|chademo/i.test(connectorType)) {
+    return 'CHAdeMO';
+  }
+  if (/dc\s*콤보|dc콤보|콤보|ccs|dccombo/i.test(connectorType)) {
+    return 'DC콤보';
+  }
+  if (/ac\s*3상|ac3상|3상/i.test(connectorType)) {
+    return 'AC3상';
+  }
   const compact = connectorType.replace(/\s+/g, '').toLowerCase();
   if (/차데모|chademo/.test(compact)) {
     return 'CHAdeMO';
@@ -226,6 +345,19 @@ function normalizeConnectorType(connectorType?: string): string | undefined {
 function normalizeConnectorTypes(connectorType?: string): string[] {
   if (!connectorType) {
     return [];
+  }
+  const readableConnectors: string[] = [];
+  if (/차데모|chademo/i.test(connectorType)) {
+    readableConnectors.push('CHAdeMO');
+  }
+  if (/dc\s*콤보|dc콤보|콤보|ccs|dccombo/i.test(connectorType)) {
+    readableConnectors.push('DC콤보');
+  }
+  if (/ac\s*3상|ac3상|3상/i.test(connectorType)) {
+    readableConnectors.push('AC3상');
+  }
+  if (readableConnectors.length > 0) {
+    return Array.from(new Set(readableConnectors));
   }
   const compact = connectorType.replace(/\s+/g, '').toLowerCase();
   const connectors: string[] = [];
@@ -378,7 +510,9 @@ function numberFromMatch(text: string, patterns: RegExp[]): number | undefined {
 }
 
 function parseText(input: EvChargingPlanInput): Required<Pick<EvChargingPlanInput, 'arrivalInMinutes'>> &
-  Pick<EvChargingPlanInput, 'desiredKwh' | 'routeName' | 'direction' | 'connectorType' | 'minimumOutputKw'> {
+  Pick<EvChargingPlanInput, 'desiredKwh' | 'routeName' | 'direction' | 'vehicleModel' | 'connectorType' | 'minimumOutputKw'> & {
+    vehicleConnector?: EvVehicleConnectorMatch;
+  } {
   const text = input.text ?? '';
   const arrivalFromText =
     numberFromMatch(text, [/(\d+(?:\.\d+)?)\s*분\s*(?:뒤|후|이내)/]) ??
@@ -406,6 +540,7 @@ function parseText(input: EvChargingPlanInput): Required<Pick<EvChargingPlanInpu
     if (text.includes('목포방향')) direction = '목포방향';
   }
 
+  const vehicleConnector = inferEvConnectorFromVehicleModel(input.vehicleModel ?? text);
   let connectorType = normalizeConnectorType(input.connectorType);
   if (!connectorType) {
     if (/dc\s*콤보|dc콤보|콤보/i.test(text)) connectorType = 'DC콤보';
@@ -413,11 +548,17 @@ function parseText(input: EvChargingPlanInput): Required<Pick<EvChargingPlanInpu
     if (/ac\s*3상|ac3상/i.test(text)) connectorType = 'AC3상';
   }
 
+  if (!connectorType && vehicleConnector) {
+    connectorType = vehicleConnector.connectorType;
+  }
+
   return {
     arrivalInMinutes: input.arrivalInMinutes ?? arrivalFromText ?? 30,
     desiredKwh,
     routeName,
     direction,
+    vehicleModel: input.vehicleModel ?? vehicleConnector?.vehicleModel,
+    vehicleConnector,
     connectorType,
     minimumOutputKw
   };
@@ -555,6 +696,38 @@ function buildVisitPlanText(
           : '실시간 조회 결과가 없어 방문 플랜을 만들지 않았습니다.'
   );
   return lines.join('\n');
+}
+
+function buildEvUserFacingSummary(input: {
+  parsed: ReturnType<typeof parseText>;
+  dataMode: EvChargingPlanResult['dataMode'];
+  planA?: EvChargingPlanCandidate;
+  planB?: EvChargingPlanCandidate;
+  clarifyingQuestions: string[];
+}): string[] {
+  const summary: string[] = [];
+  if (input.planA) {
+    summary.push(`추천 충전소: ${input.planA.name} (${input.planA.status}, ${input.planA.availableCount}/${input.planA.totalCount}기 사용 가능)`);
+    summary.push(`예상 도착 ${input.planA.estimatedArrivalMinutes}분, 출력 ${input.planA.outputKw}kW, 커넥터 ${input.planA.connectorType ?? '미확인'}`);
+  } else {
+    summary.push(
+      input.dataMode === 'live_public_api'
+        ? '공개 EV 충전소 API 조회 결과에서 조건에 맞는 후보를 찾지 못했습니다.'
+        : '제공된 후보나 실시간 API 결과가 없어 방문 플랜을 확정하지 못했습니다.'
+    );
+  }
+  if (input.parsed.vehicleConnector) {
+    summary.push(
+      `차량 모델 기준 커넥터 추정: ${input.parsed.vehicleConnector.vehicleModel} -> ${input.parsed.vehicleConnector.connectorType} (${input.parsed.vehicleConnector.confidence})`
+    );
+  }
+  if (input.planB) {
+    summary.push(`대안 후보: ${input.planB.name} (${input.planB.status})`);
+  }
+  if (input.clarifyingQuestions.length > 0) {
+    summary.push(`추가 확인: ${input.clarifyingQuestions.slice(0, 2).join(' / ')}`);
+  }
+  return summary.slice(0, 5);
 }
 
 function extractLocationText(input: EvChargingPlanInput): string | undefined {
@@ -867,6 +1040,8 @@ function buildEvChargingPlan(
       direction: parsed.direction,
       arrivalInMinutes: parsed.arrivalInMinutes,
       desiredKwh: parsed.desiredKwh,
+      vehicleModel: parsed.vehicleModel,
+      vehicleConnector: parsed.vehicleConnector,
       connectorType: parsed.connectorType,
       minimumOutputKw: parsed.minimumOutputKw
     },
@@ -875,6 +1050,7 @@ function buildEvChargingPlan(
     candidates: scored,
     liveApi,
     visitPlanText: buildVisitPlanText(parsed, dataMode, planA, planB),
+    userFacingSummary: buildEvUserFacingSummary({ parsed, dataMode, planA, planB, clarifyingQuestions }),
     clarifyingQuestions,
     reservationBoundary: {
       currentMvp:
@@ -938,12 +1114,15 @@ function buildUnavailableEvChargingPlan(
       direction: parsed.direction,
       arrivalInMinutes: parsed.arrivalInMinutes,
       desiredKwh: parsed.desiredKwh,
+      vehicleModel: parsed.vehicleModel,
+      vehicleConnector: parsed.vehicleConnector,
       connectorType: parsed.connectorType,
       minimumOutputKw: parsed.minimumOutputKw
     },
     liveApi,
     candidates: [],
     visitPlanText: [message, buildVisitPlanText(parsed, 'unavailable')].join('\n'),
+    userFacingSummary: buildEvUserFacingSummary({ parsed, dataMode: 'unavailable', clarifyingQuestions }),
     clarifyingQuestions,
     reservationBoundary: {
       currentMvp: '실시간 공공데이터 조회나 사용자 제공 후보가 없으면 임의 충전소를 추천하지 않습니다.',
