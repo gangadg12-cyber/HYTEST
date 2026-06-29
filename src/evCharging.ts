@@ -125,7 +125,7 @@ export interface EvChargingPlanResult {
   disclaimer: string;
 }
 
-const KECO_EV_CHARGER_BASE_URL = 'http://apis.data.go.kr/B552584/EvCharger';
+const KECO_EV_CHARGER_BASE_URL = 'https://apis.data.go.kr/B552584/EvCharger';
 const KECO_EV_CHARGER_INFO_ENDPOINT = `${KECO_EV_CHARGER_BASE_URL}/getChargerInfo`;
 const KECO_EV_CHARGER_STATUS_ENDPOINT = `${KECO_EV_CHARGER_BASE_URL}/getChargerStatus`;
 const KECO_EV_CHARGER_TIMEOUT_MS = 15000;
@@ -753,13 +753,13 @@ function buildVisitPlanText(
   if (!planA) {
     const connectorNote = parsed.connectorType ? ` 특히 요청 커넥터(${parsed.connectorType})와 정확히 일치하는 후보가 필요합니다.` : '';
     return [
-      `현재 조건에 맞는 충전소 후보가 부족합니다.${connectorNote}`,
-      '실시간 공공데이터 조회가 실패했거나 조회 결과가 없습니다. 조건을 완화하거나 잠시 후 다시 조회해야 합니다.',
+      `아직 추천할 충전소 후보를 확정하지 못했습니다.${connectorNote}`,
+      '위치, 차량 모델/커넥터, 충전량 같은 기준이 부족하거나 공공 API 결과가 조건에 맞지 않습니다.',
       dataMode === 'live_public_api'
-          ? '공공데이터포털 충전소 API 조회 결과에서 조건에 맞는 후보가 부족합니다. 위치 범위, 커넥터 타입, 출력 조건을 완화해 다시 조회할 수 있습니다.'
-          : dataMode === 'provided_candidates'
-            ? '제공된 후보 기준 방문 플랜이며, 예약 확정은 충전사업자 예약/관제 API 연동이 필요합니다.'
-            : 'MCP가 임의 충전소를 추천하지 않습니다. 실시간 API 또는 사용자 제공 후보가 필요합니다.'
+        ? '공공데이터포털 충전소 API 조회 결과에서 조건에 맞는 후보가 부족합니다. 위치 범위, 커넥터 타입, 출력 조건을 완화해 다시 조회할 수 있습니다.'
+        : dataMode === 'provided_candidates'
+          ? '제공된 후보 기준 방문 플랜이며, 예약 확정은 충전사업자 예약/관제 API 연동이 필요합니다.'
+          : 'MCP가 임의 충전소를 만들어 추천하지는 않습니다. 필요한 정보를 보완하면 다시 조회합니다.'
     ].join('\n');
   }
 
@@ -813,39 +813,202 @@ function buildEvUserFacingSummary(input: {
     summary.push(`대안 후보: ${input.planB.name} (${input.planB.status})`);
   }
   if (input.clarifyingQuestions.length > 0) {
-    summary.push(`추가 확인: ${input.clarifyingQuestions.slice(0, 2).join(' / ')}`);
+    return input.clarifyingQuestions.slice(0, 3);
   }
   return summary.slice(0, 5);
 }
 
+const BROAD_REGION_ALIASES = new Set([
+  '서울',
+  '서울특별시',
+  '부산',
+  '부산광역시',
+  '대구',
+  '대구광역시',
+  '인천',
+  '인천광역시',
+  '광주',
+  '광주광역시',
+  '대전',
+  '대전광역시',
+  '울산',
+  '울산광역시',
+  '세종',
+  '세종특별자치시',
+  '경기',
+  '경기도',
+  '강원',
+  '강원특별자치도',
+  '충북',
+  '충청북도',
+  '충남',
+  '충청남도',
+  '전북',
+  '전라북도',
+  '전북특별자치도',
+  '전남',
+  '전라남도',
+  '경북',
+  '경상북도',
+  '경남',
+  '경상남도',
+  '제주',
+  '제주특별자치도'
+]);
+
+const EV_LOCATION_STOPWORDS = [
+  '전기차',
+  '충전',
+  '충전소',
+  '근처',
+  '주변',
+  '에서',
+  '으로',
+  '까지',
+  '고속도로',
+  '방향',
+  '분뒤',
+  '분후',
+  '찾아',
+  '찾아줘',
+  '알려',
+  '추천',
+  '가까운',
+  '가능',
+  '사용가능',
+  '지금',
+  '현재',
+  '내위치',
+  '위치',
+  '근처',
+  '주변',
+  '부근',
+  '차량',
+  '모델',
+  '커넥터',
+  '아이오닉',
+  'ioniq',
+  'ev6',
+  '니로',
+  '코나',
+  '테슬라',
+  'tesla',
+  '모델3',
+  'model3',
+  'modely',
+  'dc콤보',
+  'dccombo',
+  'chademo',
+  'ac3상'
+];
+
+function normalizeLocationToken(token: string): string {
+  return token
+    .replace(/[.,!?()[\]{}]/g, '')
+    .replace(/(?:에서|으로|까지|부터|쪽으로|쪽|근처|주변|부근|인근|가는|가|은|는|이|가|을|를|에)$/g, '')
+    .trim();
+}
+
+function removeDirectionOnlyHints(text: string): string {
+  return text.replace(/(?:서울|부산|강릉|목포|광주|대전|대구|인천|춘천|속초|양양|울산|포항|창원|마산|진주|여수|순천|전주|군산|제주)\s*방향/g, ' ');
+}
+
+function locationCandidateTokens(text?: string): string[] {
+  if (!text) {
+    return [];
+  }
+  return removeDirectionOnlyHints(text)
+    .replace(/\d+(?:\.\d+)?\s*(?:분|시간|kwh|kw|w|km|킬로|키로)/gi, ' ')
+    .split(/[\s,/]+/)
+    .map(normalizeLocationToken)
+    .filter(
+      (token) =>
+        token.length >= 2 &&
+        !EV_LOCATION_STOPWORDS.some((stopword) => token.toLowerCase().includes(stopword.toLowerCase())) &&
+        !/^\d+$/.test(token)
+    );
+}
+
+function isBroadRegionToken(token: string): boolean {
+  return BROAD_REGION_ALIASES.has(token.replace(/\s+/g, ''));
+}
+
+function hasSpecificLocationHint(text?: string): boolean {
+  if (!text) {
+    return false;
+  }
+  if (/(?:특별시|광역시|특별자치시|특별자치도|도|시|군|구|동|읍|면|리|휴게소|IC|JC|나들목|분기점|역|공항|터미널|주차장)/i.test(text)) {
+    return true;
+  }
+  const compactText = text.replace(/\s+/g, '');
+  return [...ZCODE_ALIASES, ...ZSCODE_ALIASES].some((entry) =>
+    entry.aliases.some((alias) => {
+      const compactAlias = alias.replace(/\s+/g, '');
+      return compactAlias.length >= 2 && compactText.includes(compactAlias) && !compactText.includes(`${compactAlias}방향`);
+    })
+  );
+}
+
+function hasBroadLocationOnly(text?: string): boolean {
+  const tokens = locationCandidateTokens(text);
+  return tokens.length > 0 && tokens.every(isBroadRegionToken);
+}
+
+function hasSpecificTextLocation(text?: string): boolean {
+  if (!text) {
+    return false;
+  }
+  const tokens = locationCandidateTokens(text);
+  if (tokens.length === 0 || tokens.every(isBroadRegionToken)) {
+    return false;
+  }
+  return true;
+}
+
+type EvLocationResolutionNeed = 'specific' | 'route_only' | 'too_broad' | 'missing';
+
+function getEvLocationResolutionNeed(input: EvChargingPlanInput): EvLocationResolutionNeed {
+  const explicitText = [input.locationText, input.destination, input.origin].filter(Boolean).join(' ').trim();
+  if (
+    input.zscode ||
+    (typeof input.latitude === 'number' && typeof input.longitude === 'number') ||
+    hasSpecificTextLocation(explicitText) ||
+    (!hasBroadLocationOnly(explicitText) && hasSpecificLocationHint(explicitText))
+  ) {
+    return 'specific';
+  }
+  if (input.zcode) {
+    return 'too_broad';
+  }
+
+  const parsed = parseText(input);
+  const text = explicitText || input.text?.trim();
+  if (text && (parsed.routeName || parsed.direction) && !hasSpecificTextLocation(text)) {
+    return 'route_only';
+  }
+  if (!text || locationCandidateTokens(text).length === 0) {
+    return 'missing';
+  }
+  if (hasBroadLocationOnly(text)) {
+    return 'too_broad';
+  }
+  return hasSpecificTextLocation(text) || (!hasBroadLocationOnly(text) && hasSpecificLocationHint(text)) ? 'specific' : 'missing';
+}
+
 function extractLocationText(input: EvChargingPlanInput): string | undefined {
-  const text = [input.locationText, input.destination, input.origin, input.text].filter(Boolean).join(' ');
-  return text.trim() || undefined;
+  const explicitText = [input.locationText, input.destination, input.origin].filter(Boolean).join(' ').trim();
+  if (explicitText && getEvLocationResolutionNeed(input) === 'specific') {
+    return explicitText;
+  }
+  return getEvLocationResolutionNeed(input) === 'specific' ? input.text?.trim() || undefined : undefined;
 }
 
 function locationKeyword(locationText?: string): string | undefined {
   if (!locationText) {
     return undefined;
   }
-  const stopwords = [
-    '전기차',
-    '충전',
-    '충전소',
-    '근처',
-    '주변',
-    '에서',
-    '으로',
-    '까지',
-    '고속도로',
-    '방향',
-    '분뒤',
-    '분후'
-  ];
   const compactText = locationText.replace(/\s+/g, '');
-  const tokens = locationText
-    .split(/[\s,]+/)
-    .map((token) => token.trim())
-    .filter((token) => token.length >= 2 && !stopwords.some((stopword) => token.includes(stopword)));
+  const tokens = locationCandidateTokens(locationText);
   return tokens.find((token) => !ZCODE_ALIASES.some((entry) => entry.aliases.includes(token))) ?? (compactText.length >= 2 ? compactText : undefined);
 }
 
@@ -1182,8 +1345,17 @@ function buildUnavailableEvChargingPlan(
 ): EvChargingPlanResult {
   const parsed = parseText(input);
   const area = resolveEvArea(input);
+  const locationNeed = getEvLocationResolutionNeed(input);
+  const locationClarifyingQuestion =
+    locationNeed === 'route_only'
+      ? '충전소 후보를 좁히려면 현재 위치, 출발지, 경유지 중 하나를 입력해 주세요. 예: 천안IC 근처, 죽전휴게소, 서울 출발/대전 도착.'
+      : locationNeed === 'too_broad'
+        ? '조회 범위가 넓어 후보를 좁히기 어렵습니다. 시군구/동, 건물명, 역, 휴게소, IC 중 하나를 더 구체적으로 입력해 주세요.'
+        : locationNeed === 'missing'
+          ? '충전소를 찾을 기준 위치를 입력해 주세요. 예: 서울 강남구, 코엑스, 덕평휴게소, 천안IC.'
+          : undefined;
   const clarifyingQuestions = [
-    !input.locationText && !area.zcode && typeof input.latitude !== 'number' ? '충전소를 찾을 위치명, zcode 또는 좌표를 알려주세요.' : undefined,
+    locationClarifyingQuestion,
     !parsed.connectorType ? '차량 모델 또는 커넥터 타입(예: DC콤보, CHAdeMO, AC3상)을 알려주세요.' : undefined,
     !parsed.desiredKwh ? '원하는 충전량(kWh)을 알려주면 방문 플랜을 더 정확히 만들 수 있습니다.' : undefined
   ].filter((question): question is string => Boolean(question));
@@ -1235,11 +1407,25 @@ export async function planEvChargingVisitWithLiveData(input: EvChargingPlanInput
     return planEvChargingVisit(input);
   }
 
+  const locationNeed = getEvLocationResolutionNeed(input);
+  if (locationNeed !== 'specific') {
+    return buildUnavailableEvChargingPlan(input, '충전소를 찾을 위치를 먼저 확정해야 합니다.');
+  }
+
   const shouldAttemptLiveApi =
     input.useLiveApi !== false &&
-    Boolean(input.locationText || input.zcode || input.zscode || typeof input.latitude === 'number' || typeof input.longitude === 'number' || input.text);
+    Boolean(
+      input.locationText ||
+        input.zcode ||
+        input.zscode ||
+        input.origin ||
+        input.destination ||
+        typeof input.latitude === 'number' ||
+        typeof input.longitude === 'number' ||
+        extractLocationText(input)
+  );
   if (!shouldAttemptLiveApi) {
-    return buildUnavailableEvChargingPlan(input, '위치명, zcode, 좌표, 사용자 제공 후보 중 하나가 없어 충전소 조회를 시도하지 않았습니다.');
+    return buildUnavailableEvChargingPlan(input, '실시간 공공 충전소 조회가 꺼져 있어 후보를 가져오지 않았습니다. 조회하려면 실시간 API 사용을 켜거나 후보 충전소 목록을 함께 제공해야 합니다.');
   }
 
   const serviceKeyConfigured = hasEvChargerServiceKey();

@@ -60,12 +60,12 @@ export const PUBLIC_API_CATALOG: PublicApiDefinition[] = [
     label: '한국전력공사 가구 평균 전력사용량',
     provider: '한국전력공사',
     area: 'home_usage',
-    sourceUrl: 'https://www.data.go.kr/',
+    sourceUrl: 'https://bigdata.kepco.co.kr/openapi/v1/powerUsage/houseAve.do',
     auth: 'service_key',
     credentialNames: ['KEPCO_BIGDATA_API_KEY'],
-    runtimeStatus: 'configured_endpoint_required',
+    runtimeStatus: 'implemented',
     usedFor: ['우리집 사용량 평균 비교', '가구원수/계절별 평균 안내'],
-    mvpBoundary: '서비스키와 실제 endpoint 매핑 전에는 사용자가 제공한 기준값이 있을 때만 비교합니다.'
+    mvpBoundary: '월 사용량과 지역이 있으면 공통코드 조회 후 houseAve.do를 호출합니다. API가 404/무응답이면 임의 평균값 없이 unavailable로 반환합니다.'
   },
   {
     code: 'K3',
@@ -113,7 +113,7 @@ export const PUBLIC_API_CATALOG: PublicApiDefinition[] = [
     credentialNames: [],
     runtimeStatus: 'catalog_only',
     usedFor: ['이사정산', '명의변경', '납부', '전기사용신청 FAQ 안내'],
-    mvpBoundary: '현재는 서버 내 민원 카탈로그/공식 경로 안내 중심이며, FAQ 전문 검색은 별도 인덱싱이 필요합니다.'
+    mvpBoundary: '현재는 63개 민원 카탈로그 중심으로 안내하며, FAQ API는 툴 충돌 방지를 위해 런타임에서 사용하지 않습니다. 추후 별도 라우팅 정책이 정리되면 보조 검색으로 다시 연결합니다.'
   },
   {
     code: 'K8',

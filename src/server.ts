@@ -13,7 +13,7 @@ import {
   prepareApplicationDraft
 } from './civilService.js';
 import { planEvChargingVisitWithLiveData } from './evCharging.js';
-import { compareHomeElectricityUsage } from './homeUsage.js';
+import { compareHomeElectricityUsageWithLiveData } from './homeUsage.js';
 import { getOfficialDataSourcesResult, SERVICE_NAME, SERVICE_NAME_KO, SERVICE_VERSION, type CivilServiceType } from './kepcoData.js';
 import { getApiReadiness, getPublicApis } from './publicApis.js';
 import { handleElectricLifeRequest } from './requestRouter.js';
@@ -266,17 +266,21 @@ function createServer(): McpServer {
     {
       title: 'Compare Home Electricity Usage',
       description:
-        'Use when the user asks whether their home electricity usage is higher than average, e.g. "우리집 420kWh면 평균보다 많아?". This is API-first: without a public average usage API or user-provided benchmarkMonthlyKwh, it returns unavailable instead of inventing an average.',
+        'Use when the user asks whether their home electricity usage is higher than average, e.g. "우리집 420kWh면 평균보다 많아?". This is API-first: when monthlyKwh and region are available, it resolves KEPCO common codes and calls the KEPCO house average usage API. If region/month/API data is missing, return clarifyingQuestions instead of inventing an average.',
       inputSchema: {
         text: z.string().min(2).max(2000).optional().describe('Natural-language home usage comparison question.'),
         monthlyKwh: z.number().min(0).max(10000).optional().describe('User home monthly usage in kWh.'),
         householdSize: z.number().int().min(1).max(20).optional().describe('Optional household size.'),
         region: z.string().min(1).max(80).optional().describe('Optional region such as 서울 강남구.'),
+        year: z.number().int().min(2000).max(2100).optional().describe('Optional comparison year for KEPCO houseAve.do. Defaults to previous year when omitted.'),
         month: z.number().int().min(1).max(12).optional().describe('Billing/comparison month.'),
+        metroCd: z.string().min(2).max(2).optional().describe('Optional KEPCO metro code from commonCode.do.'),
+        cityCd: z.string().min(1).max(5).optional().describe('Optional KEPCO city code from commonCode.do.'),
         season: seasonSchema.optional().describe('Optional season override.'),
         voltageType: voltageSchema.optional().describe('Residential voltage type. Defaults to low_voltage.'),
-        benchmarkMonthlyKwh: z.number().min(0).max(10000).optional().describe('Optional public average benchmark. If omitted and API is not configured, no comparison is fabricated.'),
-        benchmarkLabel: z.string().min(1).max(120).optional().describe('Optional benchmark label.')
+        benchmarkMonthlyKwh: z.number().min(0).max(10000).optional().describe('Optional public average benchmark. If omitted, the server attempts KEPCO houseAve.do when region is available.'),
+        benchmarkLabel: z.string().min(1).max(120).optional().describe('Optional benchmark label.'),
+        useLiveApi: z.boolean().optional().describe('Set false to skip KEPCO houseAve.do and require benchmarkMonthlyKwh.')
       },
       annotations: {
         title: 'Compare Home Electricity Usage',
@@ -286,7 +290,7 @@ function createServer(): McpServer {
         idempotentHint: true
       }
     },
-    async (input) => jsonText(compareHomeElectricityUsage(input))
+    async (input) => jsonText(await compareHomeElectricityUsageWithLiveData(input))
   );
 
   server.registerTool(

@@ -242,16 +242,26 @@ function parseDirectAdditionalKwh(text: string): number | undefined {
   ]);
 }
 
-function parseMonthlyKwh(text: string, hasUsageDetail: boolean): number | undefined {
-  const monthly = parseNumberNear(text, [
+function parseMonthlyKwh(text: string, hasUsageDetail: boolean, allowCasualUsageMention = true): number | undefined {
+  const explicitMonthly = parseNumberNear(text, [
     /(?:기존|현재|평소|지난달|전월).{0,18}?(\d+(?:\.\d+)?)\s*(?:kwh|kw\s*h|킬로와트시|키로와트시)/i,
     /(?:월|월간|한\s*달|한달|이번\s*달|이번달|이번\s*월|이번월).{0,18}?(\d+(?:\.\d+)?)\s*(?:kwh|kw\s*h|킬로와트시|키로와트시)/i,
-    /(?:사용량|전력량|전기).{0,18}?(\d+(?:\.\d+)?)\s*(?:kwh|kw\s*h|킬로와트시|키로와트시)/i,
-    /(\d+(?:\.\d+)?)\s*(?:kwh|kw\s*h|킬로와트시|키로와트시).{0,18}?(?:기준|에서|인데|쓰는데|사용중|사용\s*중|쓰고|나오는데)/i,
+    /(?:사용량|전력량|전기\s*사용량).{0,18}?(\d+(?:\.\d+)?)\s*(?:kwh|kw\s*h|킬로와트시|키로와트시)/i,
+    /(\d+(?:\.\d+)?)\s*(?:kwh|kw\s*h|킬로와트시|키로와트시).{0,18}?(?:기준|에서|인데|쓰는데|사용중|사용\s*중|쓰고|나오는데)/i
+  ]);
+  if (typeof explicitMonthly === 'number') {
+    return explicitMonthly;
+  }
+
+  if (!allowCasualUsageMention) {
+    return undefined;
+  }
+
+  const casualMonthly = parseNumberNear(text, [
     /(\d+(?:\.\d+)?)\s*(?:kwh|kw\s*h|킬로와트시|키로와트시).{0,18}?(?:썼|사용|나왔|정도|청구|요금|쓸)/i
   ]);
-  if (typeof monthly === 'number') {
-    return monthly;
+  if (typeof casualMonthly === 'number') {
+    return casualMonthly;
   }
 
   const values = extractKwhValues(text);
@@ -282,7 +292,10 @@ export function parseUsageRequest(input: BillEstimateInput): ParsedUsageRequest 
 
   if (!applianceName && text) {
     const candidate = normalized.match(/([가-힣A-Za-z0-9+\- ]{2,24})(?:를|을)?\s*(?:하루|매일|종일|사용|켜|돌|쓰)/);
-    applianceName = candidate?.[1]?.trim();
+    const candidateName = candidate?.[1]?.trim();
+    if (candidateName && !/(?:kwh|kw\s*h|킬로와트시|키로와트시|월|이번|지난|전월|현재|평소|사용량|전력량|우리집|집)/i.test(candidateName)) {
+      applianceName = candidateName;
+    }
   }
 
   let hoursPerDay = input.hoursPerDay;
@@ -306,12 +319,27 @@ export function parseUsageRequest(input: BillEstimateInput): ParsedUsageRequest 
   const perUseKwh = parsePerUseKwh(normalized);
   const usesPerMonth = parseUsesPerMonth(normalized);
   const additionalMonthlyKwhDirect = parseDirectAdditionalKwh(normalized);
+  if (
+    typeof additionalMonthlyKwhDirect === 'number' &&
+    typeof input.powerW !== 'number' &&
+    !/(\d+(?:\.\d+)?)\s*(?:kw|킬로와트)(?!\s*(?:h|시))|(\d+(?:\.\d+)?)\s*(?:w\b|와트)/i.test(normalized)
+  ) {
+    powerW = undefined;
+    if (!input.applianceName) {
+      applianceName = undefined;
+    }
+    const presetAssumptionIndex = assumptions.findIndex((assumption) => assumption.includes('소비전력은'));
+    if (presetAssumptionIndex >= 0) {
+      assumptions.splice(presetAssumptionIndex, 1);
+    }
+  }
 
   let baseMonthlyKwh = input.baseMonthlyKwh;
   if (typeof baseMonthlyKwh !== 'number') {
     baseMonthlyKwh = parseMonthlyKwh(
       normalized,
-      typeof powerW === 'number' || typeof hoursPerDay === 'number' || typeof daysPerMonth === 'number'
+      typeof powerW === 'number' || typeof hoursPerDay === 'number' || typeof daysPerMonth === 'number',
+      typeof additionalMonthlyKwhDirect !== 'number'
     );
   }
 
@@ -496,7 +524,7 @@ function buildBillUserFacingSummary(result: {
     summary.push(`예상 요금 변화는 ${result.increaseWon.toLocaleString('ko-KR')}원입니다.`);
   }
   if (result.clarifyingQuestions?.length) {
-    summary.push(`추가 확인: ${result.clarifyingQuestions.slice(0, 2).join(' / ')}`);
+    summary.push(`추가로 확인할 내용: ${result.clarifyingQuestions.slice(0, 2).join(' / ')}`);
   }
   return summary.slice(0, 4);
 }
@@ -585,20 +613,33 @@ export function estimateBill(input: BillEstimateInput): BillEstimateResult {
     result.increasePercent =
       beforeBill.estimatedTotalWon > 0 ? Number(((result.increaseWon / beforeBill.estimatedTotalWon) * 100).toFixed(1)) : undefined;
   } else {
-    result.marginalScenarios = [200, 300, 400, 500].map((base) => {
-      const before = calculateResidentialBill({ monthlyKwh: base, voltageType: parsed.voltageType, season: parsed.season });
-      const afterMonthlyKwh = Math.max(0, base + additionalMonthlyKwh);
-      const after = calculateResidentialBill({
-        monthlyKwh: afterMonthlyKwh,
-        voltageType: parsed.voltageType,
-        season: parsed.season
+    if (typeof parsed.additionalMonthlyKwhDirect === 'number') {
+      result.clarifyingQuestions = Array.from(
+        new Set([
+          ...result.clarifyingQuestions,
+          '현재 또는 전월 월 사용량(kWh)을 알려주세요. 누진 구간 때문에 기준 사용량이 있어야 정확한 증가/감소 요금을 계산할 수 있습니다.'
+        ])
+      );
+      result.recommendations = [
+        '기준 월 사용량이 없으면 kWh 변화량은 알 수 있지만 전기요금 증가액은 확정하지 않습니다.',
+        ...result.recommendations
+      ];
+    } else {
+      result.marginalScenarios = [200, 300, 400, 500].map((base) => {
+        const before = calculateResidentialBill({ monthlyKwh: base, voltageType: parsed.voltageType, season: parsed.season });
+        const afterMonthlyKwh = Math.max(0, base + additionalMonthlyKwh);
+        const after = calculateResidentialBill({
+          monthlyKwh: afterMonthlyKwh,
+          voltageType: parsed.voltageType,
+          season: parsed.season
+        });
+        return {
+          assumedBaseMonthlyKwh: base,
+          afterMonthlyKwh: Number(afterMonthlyKwh.toFixed(3)),
+          estimatedIncreaseWon: after.estimatedTotalWon - before.estimatedTotalWon
+        };
       });
-      return {
-        assumedBaseMonthlyKwh: base,
-        afterMonthlyKwh: Number(afterMonthlyKwh.toFixed(3)),
-        estimatedIncreaseWon: after.estimatedTotalWon - before.estimatedTotalWon
-      };
-    });
+    }
   }
 
   result.userFacingSummary = buildBillUserFacingSummary(result);
@@ -677,8 +718,19 @@ export function compareUsageScenarios(input: {
     };
   }
 
-  if (typeof directChangeKwh === 'number' && typeof input.powerW !== 'number' && typeof parsed.powerW !== 'number') {
+  if (typeof directChangeKwh === 'number') {
     const changeKwh = directChangeKwh;
+    if (typeof parsed.baseMonthlyKwh !== 'number') {
+      return {
+        scenarios: [],
+        baseAssumption: `기존 월 사용량을 모르는 상태에서 ${changeKwh}kWh 변화`,
+        clarifyingQuestions: ['현재 또는 전월 월 사용량(kWh)을 알려주세요. 누진 구간 때문에 기준 사용량이 있어야 정확한 증가/감소 요금을 계산할 수 있습니다.'],
+        recommendations: [
+          '예: "지난달 320kWh였고 이번 달 85kWh 더 쓰면?"처럼 기준 월 사용량과 변화량을 같이 알려주세요.',
+          '기준 사용량이 없으면 kWh 변화량은 알 수 있지만 전기요금 증가액은 확정하지 않습니다.'
+        ]
+      };
+    }
     const baseScenarios = typeof parsed.baseMonthlyKwh === 'number' ? [parsed.baseMonthlyKwh] : [200, 300, 400, 500];
     const directIncreaseScenarios = baseScenarios.map((base) => {
       const before = calculateResidentialBill({ monthlyKwh: base, voltageType: parsed.voltageType, season: parsed.season });
@@ -771,7 +823,16 @@ export function compareUsageScenarios(input: {
       typeof parsed.baseMonthlyKwh === 'number'
         ? `기존 월 사용량 ${parsed.baseMonthlyKwh}kWh 기준`
         : '기존 월 사용량이 없어 kWh 증가량만 비교했습니다.',
-    clarifyingQuestions: [],
-    recommendations: buildRecommendations(parsed)
+    clarifyingQuestions:
+      typeof parsed.baseMonthlyKwh === 'number'
+        ? []
+        : ['현재 또는 전월 월 사용량(kWh)을 알려주면 누진 구간 기준 요금 증가액까지 계산할 수 있습니다.'],
+    recommendations:
+      typeof parsed.baseMonthlyKwh === 'number'
+        ? buildRecommendations(parsed)
+        : [
+            ...buildRecommendations(parsed),
+            '기준 월 사용량이 없으면 추가 kWh만 계산하고 요금 증가액은 확정하지 않습니다.'
+          ]
   };
 }

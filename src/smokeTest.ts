@@ -261,7 +261,7 @@ assert.equal(liveDisabled.dataMode, 'unavailable');
 assert.equal(liveDisabled.candidates.length, 0);
 assert.equal(liveDisabled.planA, undefined);
 assert.ok(Array.isArray(liveDisabled.clarifyingQuestions));
-assert.ok(liveDisabled.visitPlanText.includes('임의 충전소를 추천하지 않습니다'));
+assert.ok(liveDisabled.visitPlanText.includes('임의 충전소'));
 
 const chademoPlan = planEvChargingVisit({
   text: '30분 뒤 영동고속도로 강릉방향에서 차데모 충전소만 찾아줘',

@@ -1,7 +1,7 @@
 import { compareUsageScenarios, estimateBill } from './billCalculator.js';
 import { guideCivilService, prepareApplicationDraft } from './civilService.js';
 import { planEvChargingVisitWithLiveData, type ChargerCandidateInput } from './evCharging.js';
-import { compareHomeElectricityUsage } from './homeUsage.js';
+import { compareHomeElectricityUsageWithLiveData } from './homeUsage.js';
 import type { Season, VoltageType } from './kepcoData.js';
 import { analyzeRenewableEnergySale } from './renewableSale.js';
 import { checkSolarRegion } from './solar.js';
@@ -45,7 +45,10 @@ export interface ElectricLifeRouterInput {
   benchmarkMonthlyKwh?: number;
   householdSize?: number;
   region?: string;
+  year?: number;
   month?: number;
+  metroCd?: string;
+  cityCd?: string;
   billingMonth?: number;
   season?: Season;
   voltageType?: VoltageType;
@@ -104,6 +107,19 @@ function unique<T>(values: T[]): T[] {
   return Array.from(new Set(values));
 }
 
+function hasFinalConsonant(text: string): boolean {
+  const last = Array.from(text.trim()).pop();
+  if (!last) {
+    return false;
+  }
+  const code = last.charCodeAt(0);
+  return code >= 0xac00 && code <= 0xd7a3 && (code - 0xac00) % 28 !== 0;
+}
+
+function objectParticle(text: string): string {
+  return hasFinalConsonant(text) ? '을' : '를';
+}
+
 function detectIntents(text: string): IntentCandidate[] {
   const loose = compact(text);
   const candidates: IntentCandidate[] = [];
@@ -112,7 +128,12 @@ function detectIntents(text: string): IntentCandidate[] {
   const hasUsageUnit = hasKwhUsageUnit || /(\d+(?:\.\d+)?)\s*(?:w\b|kw\b|와트|키로와트)/i.test(text);
   const hasBillWord = hasAny(text, [/전기\s*요금|요금|얼마|청구|전기세|냉방비|난방비|절약|아껴/]);
   const hasExplicitBillTerm = hasAny(text, [/전기\s*요금|요금|전기세|청구|냉방비|난방비/]);
-  const hasComparisonWord = hasAny(text, [/비교|차이|줄이면|줄였|줄여|감소|절감|늘면|늘었|더\s*썼|아껴|시나리오|몇\s*시간/]);
+  const hasComparisonWord = hasAny(text, [
+    /비교|차이|줄이면|줄였|줄여|감소|절감|늘면|늘었|아껴|시나리오|몇\s*시간/,
+    /더\s*(?:쓰|썼|사용|나오|늘|증가)/,
+    /(?:얼마나|얼마\s*정도).{0,12}?(?:늘|줄|차이|아껴|절감)/,
+    /요금\s*(?:차이|변화|증가|감소)/
+  ]);
   const hasCivilWord = hasAny(text, [
     /한전|한전ON|민원|신청|명의|이사\s*정산|전기사용신청|증설|계약전력|자동이체|청구서|고객번호|복지할인|정전|전기고장|서류|신청서|양식|FAQ|자주\s*묻/
   ]);
@@ -185,13 +206,13 @@ function extractClarifyingQuestions(result: unknown): string[] {
   if (parsed && typeof parsed === 'object') {
     const missingFields = (parsed as Record<string, unknown>).missingFields;
     if (Array.isArray(missingFields)) {
-      questions.push(...missingFields.map((field) => `${String(field)}을(를) 알려주세요.`));
+      questions.push(...missingFields.map((field) => `${String(field)}${objectParticle(String(field))} 알려주세요.`));
     }
   }
 
   const missingInputs = record.missingInputs;
   if (Array.isArray(missingInputs)) {
-    questions.push(...missingInputs.map((field) => `${String(field)}을(를) 알려주세요.`));
+    questions.push(...missingInputs.map((field) => `${String(field)}${objectParticle(String(field))} 알려주세요.`));
   }
 
   const nextQuestions = record.nextQuestions;
@@ -212,11 +233,11 @@ function statusFromResult(result: unknown): RoutedIntentStatus {
     return 'answered';
   }
   const record = result as Record<string, unknown>;
-  if (record.dataMode === 'unavailable') {
-    return 'unavailable';
-  }
   if (extractClarifyingQuestions(result).length > 0) {
     return 'needs_more_info';
+  }
+  if (record.dataMode === 'unavailable') {
+    return 'unavailable';
   }
   return 'answered';
 }
@@ -226,7 +247,7 @@ function summaryFromResult(result: unknown): string | undefined {
     return undefined;
   }
   const record = result as Record<string, unknown>;
-  for (const key of ['answerSummary', 'currentBillSummary', 'visitPlanText', 'summaryText']) {
+  for (const key of ['answerSummary', 'currentBillSummary', 'visitPlanText', 'summaryText', 'baseAssumption']) {
     const value = record[key];
     if (typeof value === 'string' && value.trim()) {
       return value;
@@ -274,15 +295,19 @@ async function runIntent(candidate: IntentCandidate, input: ElectricLifeRouterIn
       daysPerMonth: input.daysPerMonth
     });
   } else if (candidate.type === 'home_usage_comparison') {
-    result = compareHomeElectricityUsage({
+    result = await compareHomeElectricityUsageWithLiveData({
       ...common,
       monthlyKwh: input.monthlyKwh ?? input.baseMonthlyKwh,
       householdSize: input.householdSize,
       region: input.region ?? input.locationText,
+      year: input.year,
       month: input.month ?? input.billingMonth,
+      metroCd: input.metroCd,
+      cityCd: input.cityCd,
       season: input.season,
       voltageType: input.voltageType,
-      benchmarkMonthlyKwh: input.benchmarkMonthlyKwh
+      benchmarkMonthlyKwh: input.benchmarkMonthlyKwh,
+      useLiveApi: input.useLiveApi
     });
   } else if (candidate.type === 'civil_service') {
     const wantsDraft = /서류|신청서|양식|초안|작성|써줘|채워|항목|무슨\s*의미/.test(input.text);
@@ -372,7 +397,7 @@ function buildSummary(intents: RoutedIntentResult[]): string {
   const answered = intents.filter((intent) => intent.status === 'answered').length;
   const needsMore = intents.filter((intent) => intent.status === 'needs_more_info').length;
   const unavailable = intents.filter((intent) => intent.status === 'unavailable').length;
-  return `요청을 ${intents.length}개 intent로 분해했습니다. 처리 완료 ${answered}개, 추가정보 필요 ${needsMore}개, API/데이터 unavailable ${unavailable}개입니다.`;
+  return `요청을 ${intents.length}개 항목으로 나눠 확인했습니다. 바로 답변 가능 ${answered}개, 추가 정보 필요 ${needsMore}개, 현재 조회 불가 ${unavailable}개입니다.`;
 }
 
 const ROUTED_INTENT_LABELS: Record<RoutedIntentType, string> = {
@@ -395,7 +420,7 @@ function buildRouterUserFacingSummary(intents: RoutedIntentResult[], nextQuestio
     })
     .slice(0, 4);
   if (nextQuestions.length > 0) {
-    summary.push(`추가 확인: ${nextQuestions.slice(0, 2).join(' / ')}`);
+    summary.push(`추가로 확인할 내용: ${nextQuestions.slice(0, 2).join(' / ')}`);
   }
   return summary.slice(0, 5);
 }
@@ -419,7 +444,7 @@ export async function handleElectricLifeRequest(input: ElectricLifeRouterInput):
       userFacingSummary: buildRouterUserFacingSummary([unknown], unknown.clarifyingQuestions),
       intents: [unknown],
       nextQuestions: unknown.clarifyingQuestions,
-      routingNotes: ['이 라우터는 PlayMCP LLM의 다중 tool 선택 부담을 줄이기 위한 서버 내부 intent 분해 계층입니다.'],
+      routingNotes: ['지원 범위를 벗어난 요청이라 처리할 전기 생활 기능을 먼저 확인합니다.'],
       disclaimer: '최종 민원 제출, 납부, 충전 예약 확정은 인증/협약 API가 추가되기 전까지 수행하지 않습니다.'
     };
   }
@@ -434,8 +459,8 @@ export async function handleElectricLifeRequest(input: ElectricLifeRouterInput):
     intents,
     nextQuestions,
     routingNotes: [
-      '라우터 tool 하나를 호출하면 서버가 내부적으로 여러 기능을 분기 실행합니다.',
-      '각 세부 결과는 intents[].result에 유지하고, 사용자에게 물어볼 추가 정보는 nextQuestions로 모읍니다.'
+      '요청을 전기요금, 한전 민원, EV 충전, 태양광/신재생 등 필요한 기능으로 나눠 확인했습니다.',
+      '추가로 필요한 정보는 nextQuestions에 모았습니다.'
     ],
     disclaimer: '공식 API 응답 또는 내장 공식 데이터 기반의 MVP 결과입니다. 실제 한전 민원 제출, 결제, 충전 예약 확정, 발전 판매 계약은 공식 인증/협약 연계가 필요합니다.'
   };

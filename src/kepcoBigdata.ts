@@ -44,7 +44,30 @@ export interface KepcoDispersedGeneration {
   vol3?: number;
 }
 
+export interface KepcoHouseAverageUsage {
+  year?: string;
+  month?: string;
+  metro?: string;
+  city?: string;
+  houseCnt?: number;
+  powerUsage?: number;
+  bill?: number;
+}
+
+export interface KepcoResolvedRegionCodes {
+  regionText?: string;
+  metroCd?: string;
+  metroName?: string;
+  cityCd?: string;
+  cityName?: string;
+  attempted: boolean;
+  used: boolean;
+  message: string;
+}
+
 const KEPCO_BIGDATA_BASE_URL = 'https://bigdata.kepco.co.kr/openapi/v1';
+const COMMON_CODE_CACHE_TTL_MS = 1000 * 60 * 30;
+const commonCodeCache = new Map<string, { fetchedAt: number; result: KepcoApiResult<KepcoCommonCode> }>();
 
 function getKepcoBigdataKey(): string | undefined {
   return firstConfiguredCredential(['KEPCO_BIGDATA_API_KEY']).value;
@@ -123,6 +146,16 @@ function normalizeRegionName(value?: string): string {
     .replace(/특별시|광역시|특별자치시|특별자치도|자치도|도|시|군|구/g, '');
 }
 
+function regionMatches(source: string | undefined, target: string | undefined): boolean {
+  const normalizedSource = normalizeRegionName(source);
+  const normalizedTarget = normalizeRegionName(target);
+  return Boolean(
+    normalizedSource &&
+      normalizedTarget &&
+      (normalizedSource.includes(normalizedTarget) || normalizedTarget.includes(normalizedSource))
+  );
+}
+
 const METRO_CODE_NAMES: Record<string, string[]> = {
   '11': ['서울특별시', '서울'],
   '21': ['부산광역시', '부산'],
@@ -154,7 +187,15 @@ function renewableRecordMatches(input: { metroCd?: string; cityCd?: string }, ro
 }
 
 export async function fetchKepcoCommonCodes(codeTy: string): Promise<KepcoApiResult<KepcoCommonCode>> {
-  return callKepco('commonCode.do', { codeTy }, (row) => {
+  const cached = commonCodeCache.get(codeTy);
+  if (cached && Date.now() - cached.fetchedAt < COMMON_CODE_CACHE_TTL_MS) {
+    return {
+      ...cached.result,
+      message: `${cached.result.message} 공통코드 캐시를 사용했습니다.`
+    };
+  }
+
+  const result = await callKepco('commonCode.do', { codeTy }, (row) => {
     const code = String(row.code ?? '').trim();
     const codeNm = String(row.codeNm ?? '').trim();
     if (!code || !codeNm) {
@@ -168,6 +209,101 @@ export async function fetchKepcoCommonCodes(codeTy: string): Promise<KepcoApiRes
       codeNm
     };
   });
+  if (result.used) {
+    commonCodeCache.set(codeTy, { fetchedAt: Date.now(), result });
+  }
+  return result;
+}
+
+export async function resolveKepcoRegionCodes(input: {
+  regionText?: string;
+  metroCd?: string;
+  cityCd?: string;
+}): Promise<KepcoResolvedRegionCodes> {
+  const regionText = input.regionText?.trim();
+  if (input.metroCd) {
+    return {
+      regionText,
+      metroCd: input.metroCd,
+      cityCd: input.cityCd,
+      attempted: false,
+      used: true,
+      message: '입력된 metroCd/cityCd를 사용했습니다.'
+    };
+  }
+
+  if (!regionText) {
+    return {
+      attempted: false,
+      used: false,
+      message: '지역명이 없어 한전 공통코드 조회를 시도하지 않았습니다.'
+    };
+  }
+
+  const metroCodes = await fetchKepcoCommonCodes('metroCd');
+  if (!metroCodes.used) {
+    return {
+      regionText,
+      attempted: metroCodes.attempted,
+      used: false,
+      message: `시도 공통코드 조회 실패: ${metroCodes.message}`
+    };
+  }
+
+  const metro = metroCodes.records.find((record) => regionMatches(regionText, record.codeNm));
+  if (!metro) {
+    return {
+      regionText,
+      attempted: true,
+      used: false,
+      message: '지역명에서 시도 공통코드를 찾지 못했습니다. 예: 서울 강남구, 경기 성남시.'
+    };
+  }
+
+  const cityCodes = await fetchKepcoCommonCodes('cityCd');
+  const city = cityCodes.records
+    .filter((record) => record.uppoCd === metro.code)
+    .find((record) => regionMatches(regionText, record.codeNm));
+
+  return {
+    regionText,
+    metroCd: metro.code,
+    metroName: metro.codeNm,
+    cityCd: input.cityCd ?? city?.code,
+    cityName: city?.codeNm,
+    attempted: true,
+    used: true,
+    message: city
+      ? `${metro.codeNm} ${city.codeNm} 공통코드를 찾았습니다.`
+      : `${metro.codeNm} 공통코드를 찾았습니다. 시군구는 특정하지 않고 시도 단위 평균을 조회합니다.`
+  };
+}
+
+export async function fetchKepcoHouseAverageUsage(input: {
+  year: string | number;
+  month: string | number;
+  metroCd: string;
+  cityCd?: string;
+}): Promise<KepcoApiResult<KepcoHouseAverageUsage>> {
+  const month = String(input.month).padStart(2, '0');
+  return callKepco(
+    'powerUsage/houseAve.do',
+    {
+      year: input.year,
+      month,
+      metroCd: input.metroCd,
+      cityCd: input.cityCd
+    },
+    (row) => ({
+      year: String(row.year ?? input.year).trim() || undefined,
+      month: String(row.month ?? month).trim() || undefined,
+      metro: String(row.metro ?? '').trim() || undefined,
+      city: String(row.city ?? '').trim() || undefined,
+      houseCnt: parseFiniteNumber(row.houseCnt),
+      powerUsage: parseFiniteNumber(row.powerUsage ?? row.powerUseage),
+      bill: parseFiniteNumber(row.bill)
+    })
+  );
 }
 
 export async function fetchKepcoRenewableContracts(input: {

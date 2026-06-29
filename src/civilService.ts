@@ -246,8 +246,24 @@ function makeDraftText(serviceType: CivilServiceType, input: CivilServiceInput):
   ].join('\n');
 }
 
+function hasFinalConsonant(text: string): boolean {
+  const last = Array.from(text.trim()).pop();
+  if (!last) {
+    return false;
+  }
+  const code = last.charCodeAt(0);
+  if (code < 0xac00 || code > 0xd7a3) {
+    return false;
+  }
+  return (code - 0xac00) % 28 !== 0;
+}
+
+function objectParticle(text: string): string {
+  return hasFinalConsonant(text) ? '을' : '를';
+}
+
 function buildClarifyingQuestions(missingInputs: string[]): string[] {
-  return missingInputs.map((field) => `${field}을(를) 알려주세요.`);
+  return missingInputs.map((field) => `${field}${objectParticle(field)} 알려주세요.`);
 }
 
 function mergeUnique(primary: string[], secondary: string[]): string[] {
@@ -296,9 +312,9 @@ function buildCivilUserFacingSummary(input: {
   return [
     `민원 유형: ${input.labelKo}`,
     `공식 경로: ${input.kepcoOnPath}`,
-    input.missingInputs.length > 0 ? `추가 입력: ${input.missingInputs.join(', ')}` : '추가 입력: 현재 초안 기준 대부분 확인됨',
+    input.missingInputs.length > 0 ? `추가로 확인할 정보: ${input.missingInputs.join(', ')}` : '현재 초안 기준으로 필요한 정보는 대부분 확인됐습니다.',
     boundaryText,
-    `handoff: ${input.directUrl}`
+    `한전ON에서 최종 확인: ${input.directUrl}`
   ].slice(0, 5);
 }
 
@@ -396,7 +412,7 @@ export function prepareApplicationDraft(input: CivilServiceInput): {
     answerSummary: guide.answerSummary,
     userFacingSummary: [
       `신청서 초안: ${source.labelKo}`,
-      guide.missingInputs.length > 0 ? `추가 입력 필요: ${guide.missingInputs.join(', ')}` : '작성 상태: 기본 초안 작성 가능',
+      guide.missingInputs.length > 0 ? `추가로 확인할 정보: ${guide.missingInputs.join(', ')}` : '기본 초안 작성에 필요한 정보는 대부분 확인됐습니다.',
       `공식 경로: ${guide.kepcoOnPath}`,
       '최종 제출은 한전ON 본인확인 후 진행'
     ],
@@ -455,7 +471,7 @@ export function getKepcoIntegrationStatus(): {
       '공공데이터포털 전기차 충전소 API 또는 사용자가 제공한 충전소 후보 기반 도착시점 방문 플랜 생성',
       '한전 전력데이터개방포털 API 기반 신재생 계약현황/분산전원 연계정보 조회',
       '신재생 발전 판매를 위한 SMP/REC 수익 산식과 입력값 체크리스트 생성',
-      '사용자가 평균 기준값을 제공한 경우 우리집 전력사용량 평균 비교',
+      '한전 가구평균 전력사용량 API 기반 우리집 사용량 평균 비교',
       '기상청 API 또는 사용자 입력 날씨 기반 전기요금/절약 조언',
       '사용자 입력 발전량/일사량 기반 태양광 요금절감 시뮬레이션'
     ],
