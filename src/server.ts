@@ -16,6 +16,7 @@ import { planEvChargingVisitWithLiveData } from './evCharging.js';
 import { compareHomeElectricityUsage } from './homeUsage.js';
 import { getOfficialDataSourcesResult, SERVICE_NAME, SERVICE_NAME_KO, SERVICE_VERSION, type CivilServiceType } from './kepcoData.js';
 import { getApiReadiness, getPublicApis } from './publicApis.js';
+import { handleElectricLifeRequest } from './requestRouter.js';
 import { analyzeRenewableEnergySale } from './renewableSale.js';
 import { checkSolarRegion } from './solar.js';
 import { adviseWeatherPowerUsage } from './weatherPower.js';
@@ -81,8 +82,68 @@ function createServer(): McpServer {
     },
     {
       instructions:
-        'Use KEPCO Electric Agent tools as an API-first Korean electricity life assistant. For any user question containing kWh, W, kW, wattage, monthly usage, electricity bill, bill difference, appliance use, minutes/hours/days of use, or usage comparison, call estimate_residential_electricity_bill or compare_electricity_usage_scenarios before answering. For solar sale, renewable sale, REC, SMP, PPA, net metering, grid interconnection, renewable contract status, or distributed generation questions, call analyze_renewable_energy_sale. For KEPCO ON/civil-service/FAQ/application-form questions, call the civil-service tools. Prefer public API backed tools for home-usage comparison, weather-based power advice, EV charging, solar/renewable sale checks, and integration status. If a public API is unavailable, return the tool result as unavailable instead of inventing arbitrary data. Do not claim to submit KEPCO civil-service requests, payment, auto-transfer, or confirmed EV charger reservations unless an authenticated partner integration is added.'
+        'Use KEPCO Electric Agent tools as an API-first Korean electricity life assistant. For broad, ambiguous, or multi-part Korean requests about electricity bills, KEPCO civil services, EV charging, solar, renewable sale, weather/power risk, or public API readiness, prefer handle_electric_life_request first so the server can split and orchestrate intents. For single-purpose questions, the specialized tools may be called directly. If a public API is unavailable, return the tool result as unavailable instead of inventing arbitrary data. Do not claim to submit KEPCO civil-service requests, payment, auto-transfer, or confirmed EV charger reservations unless an authenticated partner integration is added.'
     }
+  );
+
+  server.registerTool(
+    'handle_electric_life_request',
+    {
+      title: 'Handle Electric Life Request',
+      description:
+        'Preferred entry point for broad, ambiguous, or multi-part Korean electricity-life requests. Use when the user mixes questions such as bill calculation, usage comparison, KEPCO civil service/FAQ/form draft, EV charging station visit planning, solar/renewable sale, REC/SMP, weather-based power advice, or home usage comparison in one message. The server splits intents, runs internal domain logic, returns one combined structured result, and lists clarifying questions when needed.',
+      inputSchema: {
+        text: z.string().min(2).max(3000).describe('Original Korean natural-language user request. Can contain multiple questions.'),
+        locationText: z.string().min(1).max(200).optional().describe('Optional common location text used for EV, weather, solar, or renewable sale routing.'),
+        latitude: z.number().min(33).max(39).optional().describe('Optional latitude in Korea.'),
+        longitude: z.number().min(124).max(132).optional().describe('Optional longitude in Korea.'),
+        radiusKm: z.number().positive().max(100).optional().describe('Optional EV charger search radius in km.'),
+        origin: z.string().min(1).max(120).optional().describe('Optional EV route origin.'),
+        destination: z.string().min(1).max(120).optional().describe('Optional EV route destination.'),
+        routeName: z.string().min(1).max(80).optional().describe('Optional highway/route name.'),
+        direction: z.string().min(1).max(80).optional().describe('Optional highway direction.'),
+        arrivalInMinutes: z.number().min(0).max(1440).optional().describe('Optional estimated arrival time in minutes.'),
+        desiredKwh: z.number().positive().max(300).optional().describe('Optional desired EV charging amount in kWh.'),
+        connectorType: z.string().min(1).max(80).optional().describe('Optional exact EV connector type such as DC콤보, CHAdeMO, or AC3상.'),
+        minimumOutputKw: z.number().positive().max(1000).optional().describe('Optional minimum charger output.'),
+        candidates: z.array(chargerCandidateSchema).max(20).optional().describe('Optional EV charging candidates.'),
+        applianceName: z.string().min(1).max(80).optional().describe('Optional appliance/product name.'),
+        powerW: z.number().positive().max(100000).optional().describe('Optional appliance power in watts.'),
+        hoursPerDay: z.number().positive().max(24).optional().describe('Optional daily appliance usage hours.'),
+        daysPerMonth: z.number().positive().max(31).optional().describe('Optional monthly appliance usage days.'),
+        baseMonthlyKwh: z.number().min(0).max(10000).optional().describe('Optional current/base monthly electricity usage in kWh.'),
+        monthlyKwh: z.number().min(0).max(10000).optional().describe('Optional monthly electricity usage in kWh.'),
+        benchmarkMonthlyKwh: z.number().min(0).max(10000).optional().describe('Optional benchmark average monthly kWh for home usage comparison.'),
+        householdSize: z.number().int().min(1).max(20).optional().describe('Optional household size.'),
+        region: z.string().min(1).max(100).optional().describe('Optional region text.'),
+        month: z.number().int().min(1).max(12).optional().describe('Optional month.'),
+        billingMonth: z.number().int().min(1).max(12).optional().describe('Optional billing month.'),
+        season: seasonSchema.optional().describe('Optional tariff season.'),
+        voltageType: voltageSchema.optional().describe('Optional residential voltage type.'),
+        customerNumber: z.string().min(2).max(80).optional().describe('Optional KEPCO customer number. Avoid private data in public tests.'),
+        address: z.string().min(2).max(200).optional().describe('Optional address. Avoid private data in public tests.'),
+        applicantName: z.string().min(1).max(80).optional().describe('Optional applicant name.'),
+        phone: z.string().min(5).max(40).optional().describe('Optional phone number.'),
+        preferredDate: z.string().min(2).max(80).optional().describe('Optional preferred date.'),
+        details: z.string().min(2).max(2000).optional().describe('Optional additional details.'),
+        solarCapacityKw: z.number().positive().max(100000).optional().describe('Optional solar capacity in kW.'),
+        averageDailyGenerationKwhPerKw: z.number().positive().max(10).optional().describe('Optional average daily solar generation per kW.'),
+        averageDailySunHours: z.number().positive().max(15).optional().describe('Optional average daily sun hours.'),
+        expectedAnnualGenerationKwh: z.number().positive().max(1000000000).optional().describe('Optional expected annual renewable generation in kWh.'),
+        recWeight: z.number().positive().max(10).optional().describe('Optional REC weight.'),
+        smpWonPerKwh: z.number().positive().max(10000).optional().describe('Optional SMP in KRW/kWh.'),
+        recPriceWonPerRec: z.number().positive().max(1000000).optional().describe('Optional REC price in KRW/REC.'),
+        useLiveApi: z.boolean().optional().describe('Set false to skip live public API calls where supported.')
+      },
+      annotations: {
+        title: 'Handle Electric Life Request',
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: true,
+        idempotentHint: true
+      }
+    },
+    async (input) => jsonText(await handleElectricLifeRequest(input))
   );
 
   server.registerTool(

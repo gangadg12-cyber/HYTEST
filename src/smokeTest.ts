@@ -11,6 +11,7 @@ import { inferEvZcode, inferEvZscode, mapKecoChargerInfoItemToCandidate, planEvC
 import { compareHomeElectricityUsage } from './homeUsage.js';
 import { getOfficialDataSourcesResult } from './kepcoData.js';
 import { getApiReadiness, getPublicApis } from './publicApis.js';
+import { handleElectricLifeRequest } from './requestRouter.js';
 import { analyzeRenewableEnergySale } from './renewableSale.js';
 import { checkSolarRegion } from './solar.js';
 import { adviseWeatherPowerUsage } from './weatherPower.js';
@@ -315,6 +316,26 @@ const solarProvided = checkSolarRegion({
 assert.equal(solarProvided.dataMode, 'user_provided');
 assert.equal(solarProvided.generation?.expectedMonthlyGenerationKwh, 315);
 assert.ok(typeof solarProvided.billSaving?.estimatedSavingWon === 'number');
+
+const routedBillAndEv = await handleElectricLifeRequest({
+  text: '우리집 350kWh 쓰는데 건조기 1회 2kWh 한 달 20번 쓰면 요금 얼마나 늘고, 서울 강남구 근처 DC콤보 충전소도 찾아줘',
+  locationText: '서울 강남구',
+  connectorType: 'DC콤보',
+  useLiveApi: false
+});
+assert.ok(routedBillAndEv.intents.some((intent) => intent.type === 'usage_comparison' || intent.type === 'electric_bill'));
+assert.ok(routedBillAndEv.intents.some((intent) => intent.type === 'ev_charging'));
+assert.ok(Array.isArray(routedBillAndEv.nextQuestions));
+
+const routedCivilAndRenewable = await handleElectricLifeRequest({
+  text: '태양광 판매 수익도 계산하고 한전 명의변경 신청서에 뭘 적어야 하는지도 알려줘',
+  expectedAnnualGenerationKwh: 130000,
+  smpWonPerKwh: 140,
+  recPriceWonPerRec: 70000,
+  useLiveApi: false
+});
+assert.ok(routedCivilAndRenewable.intents.some((intent) => intent.type === 'renewable_sale'));
+assert.ok(routedCivilAndRenewable.intents.some((intent) => intent.type === 'civil_service'));
 
 const sources = getOfficialDataSourcesResult();
 assert.ok(sources.markdownSummary.includes('https://online.kepco.co.kr/CUM083D00'));

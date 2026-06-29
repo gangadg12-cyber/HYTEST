@@ -98,6 +98,17 @@ Health check:
 http://localhost:3000/healthz
 ```
 
+## MCP Tool Structure
+
+`handle_electric_life_request` is the preferred router tool for broad, ambiguous, or multi-part user messages. It splits one Korean natural-language request into domain intents and calls the existing internal logic for bills, usage comparison, KEPCO civil services, EV charging, solar, renewable sale, and weather/power advice. Specialized tools remain available for focused single-purpose questions.
+
+The router returns:
+
+- `summary`: combined handling status.
+- `intents[]`: each detected domain result.
+- `nextQuestions`: consolidated missing information or clarification prompts.
+- `routingNotes`: how the request was split.
+
 ## API Credentials
 
 For the PlayMCP contest build, public API keys are embedded in `src/contestCredentials.ts` because the KC/PlayMCP build UI does not provide a runtime secret field. KPX SMP/REC endpoint URLs are fixed in source code. `plan_ev_charging_visit` can resolve a user-provided place name/address, call the public KECO EV charger info/status APIs by region code, and rank real charger candidates by distance, status, output, and connector match. The public API does not accept arbitrary natural-language address or coordinate filters directly, so the MCP resolves location through Kakao and filters/ranks the returned official candidates internally. It still never fabricates charger candidates when the public API fails.
