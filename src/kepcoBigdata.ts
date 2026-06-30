@@ -143,16 +143,30 @@ async function callKepco<T>(
 function normalizeRegionName(value?: string): string {
   return String(value ?? '')
     .replace(/\s+/g, '')
-    .replace(/특별시|광역시|특별자치시|특별자치도|자치도|도|시|군|구/g, '');
+    .replace(/[(){}\[\],.]/g, '');
+}
+
+function stripRegionSuffix(value: string): string {
+  return value.replace(/(?:특별자치시|특별자치도|특별시|광역시|자치도|도|시|군|구)$/g, '');
 }
 
 function regionMatches(source: string | undefined, target: string | undefined): boolean {
   const normalizedSource = normalizeRegionName(source);
   const normalizedTarget = normalizeRegionName(target);
+  if (!normalizedSource || !normalizedTarget) {
+    return false;
+  }
+  if (normalizedSource.includes(normalizedTarget) || normalizedTarget.includes(normalizedSource)) {
+    return true;
+  }
+  const sourceCore = stripRegionSuffix(normalizedSource);
+  const targetCore = stripRegionSuffix(normalizedTarget);
   return Boolean(
-    normalizedSource &&
-      normalizedTarget &&
-      (normalizedSource.includes(normalizedTarget) || normalizedTarget.includes(normalizedSource))
+    targetCore.length >= 2 &&
+      sourceCore.length >= 2 &&
+      (normalizedSource.includes(targetCore) ||
+        sourceCore.includes(targetCore) ||
+        targetCore.includes(sourceCore))
   );
 }
 
@@ -240,13 +254,13 @@ export async function resolveKepcoRegionCodes(input: {
     };
   }
 
-  const metroCodes = await fetchKepcoCommonCodes('metroCd');
+  const metroCodes = await fetchKepcoCommonCodes('lglDngMetroCd');
   if (!metroCodes.used) {
     return {
       regionText,
       attempted: metroCodes.attempted,
       used: false,
-      message: `시도 공통코드 조회 실패: ${metroCodes.message}`
+      message: `법정동 시도 공통코드 조회 실패: ${metroCodes.message}`
     };
   }
 
@@ -256,7 +270,7 @@ export async function resolveKepcoRegionCodes(input: {
       regionText,
       attempted: true,
       used: false,
-      message: '지역명에서 시도 공통코드를 찾지 못했습니다. 예: 서울 강남구, 경기 성남시.'
+      message: '지역명에서 법정동 시도 공통코드를 찾지 못했습니다. 예: 서울 강남구, 경기 성남시.'
     };
   }
 

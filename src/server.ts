@@ -274,7 +274,7 @@ function createServer(): McpServer {
         region: z.string().min(1).max(80).optional().describe('Optional region such as 서울 강남구.'),
         year: z.number().int().min(2000).max(2100).optional().describe('Optional comparison year for KEPCO houseAve.do. Defaults to previous year when omitted.'),
         month: z.number().int().min(1).max(12).optional().describe('Billing/comparison month.'),
-        metroCd: z.string().min(2).max(2).optional().describe('Optional KEPCO metro code from commonCode.do.'),
+        metroCd: z.string().min(2).max(2).optional().describe('Optional KEPCO legal-dong metro code from commonCode.do codeTy=lglDngMetroCd for houseAve.do.'),
         cityCd: z.string().min(1).max(5).optional().describe('Optional KEPCO legal-dong city code from commonCode.do codeTy=lglDngCityCd for houseAve.do.'),
         season: seasonSchema.optional().describe('Optional season override.'),
         voltageType: voltageSchema.optional().describe('Residential voltage type. Defaults to low_voltage.'),

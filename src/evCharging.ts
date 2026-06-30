@@ -872,6 +872,9 @@ const EV_LOCATION_STOPWORDS = [
   '분후',
   '중인데',
   '중',
+  '가는',
+  '가고',
+  '가는중',
   '찾아',
   '찾아줘',
   '알려',
@@ -879,6 +882,7 @@ const EV_LOCATION_STOPWORDS = [
   '계획',
   '세워줘',
   '짜줘',
+  '잡아줘',
   '플랜',
   '방문',
   '곳',
@@ -1006,7 +1010,11 @@ function getEvLocationResolutionNeed(input: EvChargingPlanInput): EvLocationReso
 
   const parsed = parseText(input);
   const text = explicitText || input.text?.trim();
-  if (text && (parsed.routeName || parsed.direction) && !hasSpecificTextLocation(text)) {
+  const hasSpecificAnchor = hasSpecificLocationHint(text);
+  if (text && (parsed.routeName || parsed.direction) && !hasSpecificAnchor) {
+    return 'route_only';
+  }
+  if (input.zcode && (parsed.routeName || parsed.direction) && !hasSpecificAnchor) {
     return 'route_only';
   }
   if (!text || locationCandidateTokens(text).length === 0) {
@@ -1371,11 +1379,11 @@ function buildUnavailableEvChargingPlan(
   const locationNeed = getEvLocationResolutionNeed(input);
   const locationClarifyingQuestion =
     locationNeed === 'route_only'
-      ? '충전소 후보를 좁히려면 현재 위치, 출발지, 경유지 중 하나를 입력해 주세요. 예: 천안IC 근처, 죽전휴게소, 서울 출발/대전 도착.'
+      ? '고속도로명과 방향만으로는 주변 충전소를 확정하기 어렵습니다. 현재 지나고 있는 IC/휴게소, 출발지와 목적지, 또는 30분 뒤 도착할 지점 중 하나를 알려주세요. 예: 천안IC 근처, 서산휴게소 지나기 전, 서울 출발/목포 도착.'
       : locationNeed === 'too_broad'
-        ? '조회 범위가 넓어 후보를 좁히기 어렵습니다. 시군구/동, 건물명, 역, 휴게소, IC 중 하나를 더 구체적으로 입력해 주세요.'
+        ? '조회 범위가 넓어 충전소 후보가 너무 많습니다. 시군구/동, 건물명, 역, 휴게소, IC 중 하나를 더 구체적으로 입력해 주세요. 예: 부산 해운대구, 대전 유성구, 덕평휴게소.'
         : locationNeed === 'missing'
-          ? '충전소를 찾을 기준 위치를 입력해 주세요. 예: 서울 강남구, 코엑스, 덕평휴게소, 천안IC.'
+          ? '충전소를 찾을 기준 위치가 필요합니다. 현재 위치, 목적지, 주변 건물명, 휴게소, IC 중 하나를 입력해 주세요. 예: 서울 강남구, 코엑스, 덕평휴게소, 천안IC.'
           : undefined;
   const clarifyingQuestions = [
     locationClarifyingQuestion,

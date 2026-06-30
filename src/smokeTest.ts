@@ -161,6 +161,9 @@ assert.equal(facilityRefund.matches[0]?.boundary, 'needs_user_auth_or_api');
 const ami = classifyCivilServiceCatalog('원격검침 AMI 신청하고 싶어', 3);
 assert.ok(ami.matches[0]?.labelKo.includes('AMI'));
 
+const meterCheck = classifyCivilServiceCatalog('계량기 숫자가 이상한 것 같아서 확인 요청하고 싶어', 3);
+assert.equal(meterCheck.matches[0]?.labelKo, '전력량계 점검 및 교환신청');
+
 const outage = guideCivilService({
   text: '집 앞 전선에서 스파크가 나고 정전된 것 같아'
 });
@@ -262,6 +265,16 @@ assert.equal(liveDisabled.candidates.length, 0);
 assert.equal(liveDisabled.planA, undefined);
 assert.ok(Array.isArray(liveDisabled.clarifyingQuestions));
 assert.ok(liveDisabled.visitPlanText.includes('임의 충전소'));
+
+const routeOnlyEvPlan = await planEvChargingVisitWithLiveData({
+  text: '서해안고속도로 목포방면으로 가는 중인데 30분 뒤 충전 플랜 잡아줘',
+  vehicleModel: '아이오닉5',
+  desiredKwh: 40,
+  useLiveApi: false
+});
+assert.equal(routeOnlyEvPlan.dataMode, 'unavailable');
+assert.ok(routeOnlyEvPlan.clarifyingQuestions[0]?.includes('현재 지나고 있는 IC/휴게소'));
+assert.equal(routeOnlyEvPlan.parsed.direction, '목포방향');
 
 const chademoPlan = planEvChargingVisit({
   text: '30분 뒤 영동고속도로 강릉방향에서 차데모 충전소만 찾아줘',
