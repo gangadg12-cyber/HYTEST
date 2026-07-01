@@ -11,6 +11,7 @@ export type CivilServiceType =
   | 'move_settlement'
   | 'new_connection'
   | 'contract_change'
+  | 'contract_termination'
   | 'auto_payment'
   | 'bill_delivery'
   | 'welfare_discount'
@@ -209,13 +210,13 @@ export const OFFICIAL_DATA_SOURCES: OfficialDataSource[] = [
     mvpUse: '자연어 입력을 공식 양식 항목에 맞춰 정리하는 근거'
   },
   {
-    id: 'keco_ev_charger_api',
-    label: '한국환경공단 전기자동차 충전소 정보 API',
-    url: 'https://www.data.go.kr/data/15076352/openapi.do',
+    id: 'kepco_ev_charge_manage_api',
+    label: '한국전력공사 전기차 충전소 운영정보 API',
+    url: 'https://www.data.go.kr/data/15147132/openapi.do',
     sourceType: 'public_api',
     usedFor: ['충전소 위치', '충전기 타입', '현재 상태', '상태 갱신시각'],
     mvpUse: 'EV 충전 방문 플랜의 실시간 상태 데이터',
-    limitation: '운영 환경에서는 공공데이터포털 서비스키가 필요합니다.'
+    limitation: '운영 환경에서는 한전 전력데이터개방포털 API 키가 필요합니다.'
   },
   {
     id: 'ex_rest_area_charger_data',
@@ -366,7 +367,7 @@ export const CIVIL_SERVICE_ITEMS: KepcoCivilServiceItem[] = [
   civilItem('switch_operation', '개폐기(책임한계점) 조작 요청', '전기설비', 'contract_change', 'needs_user_auth_or_api', '책임한계점 개폐기 조작을 요청합니다.', ['개폐기', '책임한계점', '스위치 조작']),
   civilItem('tax_invoice_reissue', '세금계산서 재발행', '세금계산서 및 증명서', 'certificate_or_tax', 'needs_user_auth_or_api', '전기요금 세금계산서를 재발행합니다.', ['세금계산서', '재발행', '계산서']),
   civilItem('power_fund_exemption', '전력산업기반기금면제 신청', '요금청구/납부/자동이체', 'bill_lookup_or_payment', 'needs_user_auth_or_api', '요건에 따른 전력산업기반기금 면제를 신청합니다.', ['전력산업기반기금', '기금 면제']),
-  civilItem('contract_termination', '계약 해지', '명의변경/전기사용', 'contract_change', 'needs_user_auth_or_api', '전기사용 계약을 해지합니다.', ['계약 해지', '전기 해지', '사용 중지']),
+  civilItem('contract_termination', '계약 해지', '명의변경/전기사용', 'contract_termination', 'needs_user_auth_or_api', '전기사용 계약을 해지합니다.', ['계약 해지', '전기 해지', '사용 중지', '전기 사용 중지', '전기 끊기', '폐업', '문 닫', '영업 종료']),
   civilItem('business_registration_change', '사업자등록 변경', '명의변경/전기사용', 'contract_change', 'needs_user_auth_or_api', '전기사용 고객의 사업자등록 정보를 변경합니다.', ['사업자등록', '사업자 변경']),
   civilItem('deposit_inactive_lookup', '휴면 고객보증금 조회', '요금청구/납부/자동이체', 'bill_lookup_or_payment', 'needs_user_auth_or_api', '휴면 고객보증금 대상 금액을 조회합니다.', ['보증금', '휴면', '고객보증금']),
   civilItem('double_payment_refund_lookup', '전기요금 이중수납금 환불 대상금액 조회', '요금청구/납부/자동이체', 'bill_lookup_or_payment', 'needs_user_auth_or_api', '이중수납 환불 대상 금액을 조회합니다.', ['이중수납', '환불', '중복납부']),
@@ -466,6 +467,15 @@ export const CIVIL_SERVICE_GUIDES: Record<
     requiredInputs: ['고객번호 또는 주소', '현재 계약전력/종별', '변경 희망 계약전력/종별', '변경 사유', '희망일'],
     likelyDocuments: ['부하설비 내역', '전기공사업체 정보', '사업자등록증(사업장)'],
     notes: ['일부 변경은 현장 확인이나 공사비 산정이 필요할 수 있습니다.']
+  },
+  contract_termination: {
+    labelKo: '계약 해지',
+    description: '폐업, 퇴거, 사용 종료 등으로 전기사용 계약을 끝내는 민원입니다.',
+    kepcoOnPath: '한전ON > 민원신청 > 명의변경/전기사용 > 계약 해지',
+    directUrl: 'https://online.kepco.co.kr/MIM001D00',
+    requiredInputs: ['고객번호 또는 사용장소 주소', '해지 희망일', '해지 사유', '정산 연락처', '요금 정산 대상자 정보'],
+    likelyDocuments: ['명의자 확인자료', '사업장 폐업/임대차 종료 등 사유 확인자료가 요구될 수 있음'],
+    notes: ['해지일의 검침/정산 및 미납요금 확인은 한전ON 인증 이후 최종 처리해야 합니다.']
   },
   auto_payment: {
     labelKo: '자동이체 신청/변경',
@@ -599,8 +609,8 @@ export const OFFICIAL_LINKS = [
     description: '민원 63건 카탈로그와 공식 민원 메뉴'
   },
   {
-    label: '한국환경공단 전기차 충전소 정보 API',
-    url: 'https://www.data.go.kr/data/15076352/openapi.do',
+    label: '한국전력공사 전기차 충전소 운영정보 API',
+    url: 'https://www.data.go.kr/data/15147132/openapi.do',
     description: '전기차 충전소 위치/상태 공개 API'
   },
   {

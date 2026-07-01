@@ -244,7 +244,7 @@ function parseDirectAdditionalKwh(text: string): number | undefined {
 
 function parseMonthlyKwh(text: string, hasUsageDetail: boolean, allowCasualUsageMention = true): number | undefined {
   const explicitMonthly = parseNumberNear(text, [
-    /(?:기존|현재|평소|지난달|전월).{0,18}?(\d+(?:\.\d+)?)\s*(?:kwh|kw\s*h|킬로와트시|키로와트시)/i,
+    /(?:기존|현재|평소|지난달(?!\s*보다)|전월(?!\s*보다)).{0,18}?(\d+(?:\.\d+)?)\s*(?:kwh|kw\s*h|킬로와트시|키로와트시)/i,
     /(?:월|월간|한\s*달|한달|이번\s*달|이번달|이번\s*월|이번월).{0,18}?(\d+(?:\.\d+)?)\s*(?:kwh|kw\s*h|킬로와트시|키로와트시)/i,
     /(?:사용량|전력량|전기\s*사용량).{0,18}?(\d+(?:\.\d+)?)\s*(?:kwh|kw\s*h|킬로와트시|키로와트시)/i,
     /(\d+(?:\.\d+)?)\s*(?:kwh|kw\s*h|킬로와트시|키로와트시).{0,18}?(?:기준|에서|인데|쓰는데|사용중|사용\s*중|쓰고|나오는데)/i

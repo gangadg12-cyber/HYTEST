@@ -83,7 +83,7 @@ function parseSolarInput(input: SolarRegionInput): SolarRegionResult['parsed'] {
   const solarCapacityKw =
     input.solarCapacityKw ??
     numberFrom(text, [
-      /(\d+(?:\.\d+)?)\s*kw\s*(?:태양광|설비|패널)?/i,
+      /(\d+(?:\.\d+)?)\s*kw(?!\s*h|h)\s*(?:태양광|설비|패널)?/i,
       /(\d+(?:\.\d+)?)\s*킬로와트/
     ]) ??
     3;

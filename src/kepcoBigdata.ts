@@ -151,23 +151,37 @@ function stripRegionSuffix(value: string): string {
 }
 
 function regionMatches(source: string | undefined, target: string | undefined): boolean {
+  return regionMatchScore(source, target) > 0;
+}
+
+function regionMatchScore(source: string | undefined, target: string | undefined): number {
   const normalizedSource = normalizeRegionName(source);
   const normalizedTarget = normalizeRegionName(target);
   if (!normalizedSource || !normalizedTarget) {
-    return false;
+    return 0;
   }
   if (normalizedSource.includes(normalizedTarget) || normalizedTarget.includes(normalizedSource)) {
-    return true;
+    return normalizedTarget.length * 100 + (normalizedSource === normalizedTarget ? 10000 : 0);
   }
   const sourceCore = stripRegionSuffix(normalizedSource);
   const targetCore = stripRegionSuffix(normalizedTarget);
-  return Boolean(
+  if (
     targetCore.length >= 2 &&
-      sourceCore.length >= 2 &&
-      (normalizedSource.includes(targetCore) ||
-        sourceCore.includes(targetCore) ||
-        targetCore.includes(sourceCore))
-  );
+    sourceCore.length >= 2 &&
+    (normalizedSource.includes(targetCore) ||
+      sourceCore.includes(targetCore) ||
+      targetCore.includes(sourceCore))
+  ) {
+    return targetCore.length * 10;
+  }
+  return 0;
+}
+
+function bestRegionCodeMatch(codes: KepcoCommonCode[], source: string | undefined): KepcoCommonCode | undefined {
+  return codes
+    .map((record) => ({ record, score: regionMatchScore(source, record.codeNm) }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || b.record.codeNm.length - a.record.codeNm.length)[0]?.record;
 }
 
 const METRO_CODE_NAMES: Record<string, string[]> = {
@@ -264,7 +278,7 @@ export async function resolveKepcoRegionCodes(input: {
     };
   }
 
-  const metro = metroCodes.records.find((record) => regionMatches(regionText, record.codeNm));
+  const metro = bestRegionCodeMatch(metroCodes.records, regionText);
   if (!metro) {
     return {
       regionText,
@@ -275,9 +289,10 @@ export async function resolveKepcoRegionCodes(input: {
   }
 
   const cityCodes = await fetchKepcoCommonCodes('lglDngCityCd');
-  const city = cityCodes.records
-    .filter((record) => record.uppoCd === metro.code)
-    .find((record) => regionMatches(regionText, record.codeNm));
+  const city = bestRegionCodeMatch(
+    cityCodes.records.filter((record) => record.uppoCd === metro.code),
+    regionText
+  );
 
   return {
     regionText,

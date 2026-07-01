@@ -145,6 +145,13 @@ export function classifyCivilServiceCatalog(text: string, limit = 5): {
 }
 
 export function inferCivilServiceType(text: string): { serviceType: CivilServiceType; confidence: CivilServiceGuideResult['confidence'] } {
+  if (hasAny(text, ['계약 해지', '전기 해지', '사용 중지', '전기 사용 중지', '전기 끊기', '폐업', '문 닫', '영업 종료'])) {
+    return { serviceType: 'contract_termination', confidence: 'high' };
+  }
+  if (/(?:전기|계약|사용).{0,8}해지|해지.{0,8}(?:전기|계약|사용)/.test(text)) {
+    return { serviceType: 'contract_termination', confidence: 'high' };
+  }
+
   const catalogMatch = CIVIL_SERVICE_ITEMS.map((item) => ({ item, score: tokenScore(text, item) }))
     .filter(({ score }) => score >= 7)
     .sort((a, b) => b.score - a.score)[0];
@@ -334,17 +341,23 @@ function buildCivilFieldGuide(): Record<string, string> {
 export function guideCivilService(input: CivilServiceInput): CivilServiceGuideResult {
   const catalog = classifyCivilServiceCatalog(input.text);
   const bestItem = catalog.matches[0];
-  const inferred = input.serviceType ? { serviceType: input.serviceType, confidence: 'high' as const } : inferCivilServiceType(input.text);
+  const rawInferred = input.serviceType ? { serviceType: input.serviceType, confidence: 'high' as const } : inferCivilServiceType(input.text);
+  const inferred =
+    !input.serviceType && rawInferred.serviceType === 'unknown' && bestItem
+      ? { serviceType: bestItem.serviceType, confidence: bestItem.confidence }
+      : rawInferred;
   const guide = CIVIL_SERVICE_GUIDES[inferred.serviceType];
+  const alignedBestItem = bestItem?.serviceType === inferred.serviceType ? bestItem : undefined;
+  const displayLabel = alignedBestItem?.labelKo ?? guide.labelKo;
   const missingInputs = missingInputsFor(inferred.serviceType, input);
-  const boundary = bestItem?.boundary ?? (inferred.serviceType === 'outage_or_danger_report' ? 'available_now' : 'needs_user_auth_or_api');
-  const requiredInputs = bestItem ? mergeUnique(bestItem.requiredInputs, guide.requiredInputs) : guide.requiredInputs;
-  const likelyDocuments = bestItem ? mergeUnique(bestItem.likelyDocuments, guide.likelyDocuments) : guide.likelyDocuments;
+  const boundary = alignedBestItem?.boundary ?? (inferred.serviceType === 'outage_or_danger_report' ? 'available_now' : 'needs_user_auth_or_api');
+  const requiredInputs = alignedBestItem ? mergeUnique(alignedBestItem.requiredInputs, guide.requiredInputs) : guide.requiredInputs;
+  const likelyDocuments = alignedBestItem ? mergeUnique(alignedBestItem.likelyDocuments, guide.likelyDocuments) : guide.likelyDocuments;
   const autoSubmitReason =
     '한전ON 로그인, 본인확인, 개인정보/금융정보 입력 또는 내부 민원 API 권한이 필요하므로 이 MCP MVP는 실제 제출 대신 분류, 서류 안내, 신청서 초안 작성, 공식 메뉴 연결까지만 수행합니다.';
-  const kepcoOnPath = bestItem?.officialPath ?? guide.kepcoOnPath;
+  const kepcoOnPath = alignedBestItem?.officialPath ?? guide.kepcoOnPath;
   const answerSummary = buildAnswerSummary({
-    labelKo: guide.labelKo,
+    labelKo: displayLabel,
     description: guide.description,
     kepcoOnPath,
     boundary,
@@ -355,10 +368,10 @@ export function guideCivilService(input: CivilServiceInput): CivilServiceGuideRe
 
   return {
     serviceType: inferred.serviceType,
-    labelKo: guide.labelKo,
+    labelKo: displayLabel,
     answerSummary,
     userFacingSummary: buildCivilUserFacingSummary({
-      labelKo: guide.labelKo,
+      labelKo: displayLabel,
       kepcoOnPath,
       boundary,
       missingInputs,
@@ -378,7 +391,7 @@ export function guideCivilService(input: CivilServiceInput): CivilServiceGuideRe
     clarifyingQuestions: buildClarifyingQuestions(missingInputs),
     nextSteps: [
       missingInputs.length > 0 ? `먼저 보완할 정보: ${missingInputs.join(', ')}` : '필수 입력값 초안은 대부분 채워졌습니다.',
-      bestItem ? `가장 가까운 한전ON 민원 항목: ${bestItem.category} > ${bestItem.labelKo}` : '민원 항목이 확실하지 않으면 한전ON 민원신청에서 다시 확인하세요.',
+      alignedBestItem ? `가장 가까운 한전ON 민원 항목: ${alignedBestItem.category} > ${alignedBestItem.labelKo}` : '민원 항목이 확실하지 않으면 한전ON 민원신청에서 다시 확인하세요.',
       '아래 신청/문의 초안을 확인한 뒤 한전ON 해당 메뉴에서 본인확인 후 제출하세요.',
       ...guide.notes
     ],
@@ -408,16 +421,16 @@ export function prepareApplicationDraft(input: CivilServiceInput): {
 
   return {
     serviceType: guide.serviceType,
-    title: `${source.labelKo} 신청서 초안`,
+    title: `${guide.labelKo} 신청서 초안`,
     answerSummary: guide.answerSummary,
     userFacingSummary: [
-      `신청서 초안: ${source.labelKo}`,
+      `신청서 초안: ${guide.labelKo}`,
       guide.missingInputs.length > 0 ? `추가로 확인할 정보: ${guide.missingInputs.join(', ')}` : '기본 초안 작성에 필요한 정보는 대부분 확인됐습니다.',
       `공식 경로: ${guide.kepcoOnPath}`,
       '최종 제출은 한전ON 본인확인 후 진행'
     ],
     draftFields: {
-      serviceType: source.labelKo,
+      serviceType: guide.labelKo,
       officialPath: guide.kepcoOnPath,
       applicantName: input.applicantName ?? '미입력',
       phone: input.phone ?? '미입력',
@@ -469,7 +482,7 @@ export function getKepcoIntegrationStatus(): {
       '한전ON 제출 전 신청/문의 문안 작성',
       '한전ON 공식 메뉴 링크 연결',
       '카카오 로컬 API로 장소명/주소를 좌표로 변환',
-      'EV 충전 방문 플랜은 카카오 위치변환과 공공데이터포털 전기차 충전소 API를 시도하되, API 응답 실패 시 임의 후보 없이 unavailable로 반환',
+      'EV 충전 방문 플랜은 카카오 위치변환과 한전 전기차 충전소 운영정보 API를 시도하되, API 응답 실패 시 임의 후보 없이 unavailable로 반환',
       '한전 전력데이터개방포털 API 기반 신재생 계약현황/분산전원 연계정보 조회',
       '신재생 발전 판매를 위한 SMP/REC 수익 산식과 입력값 체크리스트 생성',
       '한전 가구평균 전력사용량 API 기반 우리집 사용량 평균 비교',

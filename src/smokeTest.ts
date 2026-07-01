@@ -11,7 +11,7 @@ import {
   inferEvConnectorFromVehicleModel,
   inferEvZcode,
   inferEvZscode,
-  mapKecoChargerInfoItemToCandidate,
+  mapKepcoChargerManageItemToCandidate,
   planEvChargingVisit,
   planEvChargingVisitWithLiveData
 } from './evCharging.js';
@@ -32,7 +32,8 @@ const bill = calculateResidentialBill({
 assert.equal(bill.estimatedTotalWon, 70640, '350kWh low-voltage other-season sample should match KEPCO ON-style estimate');
 
 const pureBill = estimateBill({
-  text: '월 350kWh 쓰면 주택용 저압 기준 얼마야?'
+  text: '월 350kWh 쓰면 주택용 저압 기준 얼마야?',
+  billingMonth: 6
 });
 assert.equal(pureBill.currentBill?.estimatedTotalWon, 70640);
 assert.ok(pureBill.currentBillSummary?.includes('70,640원'));
@@ -41,7 +42,8 @@ assert.equal(pureBill.parsed.applianceName, undefined);
 assert.deepEqual(pureBill.parsed.missingFields, []);
 
 const casualMonthlyBill = estimateBill({
-  text: '우리집 이번 달 350kWh 썼으면 전기요금 얼마 정도 나와?'
+  text: '우리집 이번 달 350kWh 썼으면 전기요금 얼마 정도 나와?',
+  billingMonth: 6
 });
 assert.equal(casualMonthlyBill.currentBill?.estimatedTotalWon, 70640);
 assert.deepEqual(casualMonthlyBill.parsed.missingFields, []);
@@ -90,6 +92,14 @@ const reducedUsageScenario = compareUsageScenarios({
 assert.equal(reducedUsageScenario.usageBillComparisons, undefined);
 assert.equal(reducedUsageScenario.directIncreaseScenarios?.length, 1);
 assert.equal(reducedUsageScenario.directIncreaseScenarios?.[0]?.afterMonthlyKwh, 270);
+
+const previousMonthIncreaseScenario = compareUsageScenarios({
+  text: '지난달보다 65kWh 더 쓰면 얼마나 늘어? 지난달은 310kWh였어'
+});
+assert.equal(previousMonthIncreaseScenario.usageBillComparisons, undefined);
+assert.equal(previousMonthIncreaseScenario.directIncreaseScenarios?.length, 1);
+assert.equal(previousMonthIncreaseScenario.directIncreaseScenarios?.[0]?.assumedBaseMonthlyKwh, 310);
+assert.equal(previousMonthIncreaseScenario.directIncreaseScenarios?.[0]?.afterMonthlyKwh, 375);
 
 const julyBill = estimateBill({
   text: '7월에 460kWh 쓰면 전기요금이 얼마나 나와?'
@@ -164,6 +174,17 @@ assert.ok(ami.matches[0]?.labelKo.includes('AMI'));
 const meterCheck = classifyCivilServiceCatalog('계량기 숫자가 이상한 것 같아서 확인 요청하고 싶어', 3);
 assert.equal(meterCheck.matches[0]?.labelKo, '전력량계 점검 및 교환신청');
 
+const termination = guideCivilService({
+  text: '가게 폐업해서 전기 사용을 그만두려면 신청서에 뭘 써야 해?'
+});
+assert.equal(termination.serviceType, 'contract_termination');
+assert.equal(termination.labelKo, '계약 해지');
+
+const terminationWithUnpaidBill = guideCivilService({
+  text: '전기 사용 해지하면서 미납요금 확인은 어떻게 해야 해?'
+});
+assert.equal(terminationWithUnpaidBill.serviceType, 'contract_termination');
+
 const outage = guideCivilService({
   text: '집 앞 전선에서 스파크가 나고 정전된 것 같아'
 });
@@ -206,7 +227,7 @@ assert.equal(evPlan.parsed.desiredKwh, 40);
 assert.ok(evPlan.planA);
 assert.equal(evPlan.dataMode, 'provided_candidates');
 assert.equal(evPlan.reservationBoundary.integrationBoundary, 'needs_partner_agreement');
-assert.ok(evPlan.officialDataSources.some((source) => source.id === 'keco_ev_charger_api'));
+assert.ok(evPlan.officialDataSources.some((source) => source.id === 'kepco_ev_charge_manage_api'));
 assert.ok(!evPlan.officialDataSources.some((source) => source.id === 'ocpp_standard'));
 assert.ok(evPlan.userFacingSummary.length > 0);
 
@@ -237,17 +258,17 @@ assert.ok(evPlanByVehicleModel.planA);
 
 assert.equal(inferEvZcode('서울 강남구'), '11');
 assert.deepEqual(inferEvZscode('서울 강남구'), { zcode: '11', zscode: '11680' });
-const liveCandidate = mapKecoChargerInfoItemToCandidate(
+const liveCandidate = mapKepcoChargerManageItemToCandidate(
   {
-    statNm: '강남 테스트 충전소',
+    csNm: '강남 테스트 충전소',
+    cpNm: '급속01',
     addr: '서울특별시 강남구 테헤란로 1',
     lat: '37.4979',
-    lng: '127.0276',
-    chgerType: '04',
-    output: '100',
-    stat: '2',
-    statUpdDt: '20260621101010',
-    busiNm: '테스트운영사'
+    longi: '127.0276',
+    cpTp: '07',
+    chargeTp: '2',
+    cpStat: '1',
+    statUpdatedatetime: '20260621101010'
   },
   { latitude: 37.5, longitude: 127.03 }
 );
@@ -350,6 +371,34 @@ assert.equal(renewableProvided.dataMode, 'user_provided');
 assert.equal(renewableProvided.revenueEstimate?.estimatedAnnualRevenueWon, 29120000);
 assert.ok(renewableProvided.userFacingSummary.some((line) => line.includes('예상 연 매출')));
 
+const renewableDailyToMonthly = await analyzeRenewableEnergySale({
+  text: '하루 25kWh 발전하고 SMP 120원, REC 8만원이면 월 수익 대략 얼마야?',
+  expectedAnnualGenerationKwh: 25,
+  smpWonPerKwh: 120,
+  recPriceWonPerRec: 80000,
+  useLiveApi: false
+});
+assert.equal(renewableDailyToMonthly.parsed.generationInputPeriod, 'daily');
+assert.equal(renewableDailyToMonthly.parsed.expectedAnnualGenerationKwh, 9125);
+assert.equal(renewableDailyToMonthly.revenueEstimate?.estimatedAnnualRevenueWon, 1825000);
+assert.equal(renewableDailyToMonthly.revenueEstimate?.estimatedMonthlyRevenueWon, 152083);
+assert.ok(renewableDailyToMonthly.userFacingSummary.some((line) => line.includes('예상 월 매출')));
+
+const renewableContractStatus = await analyzeRenewableEnergySale({
+  text: '서울 강서구에 태양광 계약된 설비가 얼마나 있는지 공식 데이터로 볼 수 있어?',
+  useLiveApi: false
+});
+assert.equal(renewableContractStatus.parsed.requestType, 'contract_status');
+assert.ok(!renewableContractStatus.clarifyingQuestions.some((line) => /SMP|REC|발전량/.test(line)));
+
+const renewableGrid = await analyzeRenewableEnergySale({
+  text: '강원 원주에 50kW 태양광을 하려는데 아직 번지는 몰라. 계통연계 확인 가능해?',
+  useLiveApi: false
+});
+assert.equal(renewableGrid.parsed.requestType, 'grid_interconnection');
+assert.ok(renewableGrid.clarifyingQuestions.some((line) => line.includes('동') || line.includes('지번') || line.includes('변전소')));
+assert.ok(!renewableGrid.clarifyingQuestions.some((line) => /SMP|REC/.test(line)));
+
 const homeUsageUnavailable = compareHomeElectricityUsage({ monthlyKwh: 420 });
 assert.equal(homeUsageUnavailable.dataMode, 'unavailable');
 assert.equal(homeUsageUnavailable.comparison, undefined);
@@ -427,7 +476,7 @@ for (const question of ROUTER_REGRESSION_QUESTIONS) {
 
 const sources = getOfficialDataSourcesResult();
 assert.ok(sources.markdownSummary.includes('https://online.kepco.co.kr/CUM083D00'));
-assert.ok(sources.markdownSummary.includes('https://www.data.go.kr/data/15076352/openapi.do'));
+assert.ok(sources.markdownSummary.includes('https://www.data.go.kr/data/15147132/openapi.do'));
 assert.ok(!sources.markdownSummary.includes('openchargealliance'));
 assert.ok(sources.fileReturnNote.includes('MCP 표준'));
 

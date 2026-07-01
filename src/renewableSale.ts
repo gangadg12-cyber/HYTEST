@@ -10,6 +10,10 @@ import { resolveKakaoLocation, type KakaoLocationResult } from './kakaoLocal.js'
 import { getApiReadiness, getConfiguredServiceKey, getPublicApis, type ApiDataMode } from './publicApis.js';
 import { ensureArray, fetchStructuredWithTimeout, parseFiniteNumber } from './publicApiClient.js';
 
+type RenewableRequestType = 'revenue' | 'contract_status' | 'grid_interconnection' | 'concept' | 'general';
+type GenerationPeriod = 'daily' | 'monthly' | 'annual';
+type RevenuePeriod = 'monthly' | 'annual';
+
 export interface RenewableSaleInput {
   text?: string;
   locationText?: string;
@@ -39,8 +43,12 @@ export interface RenewableSaleResult {
     cityCd?: string;
     genSrcCd: string;
     generationSource: string;
+    requestType: RenewableRequestType;
     solarCapacityKw?: number;
     expectedAnnualGenerationKwh?: number;
+    generationInputKwh?: number;
+    generationInputPeriod?: GenerationPeriod;
+    requestedRevenuePeriod?: RevenuePeriod;
     recWeight: number;
     smpWonPerKwh?: number;
     recPriceWonPerRec?: number;
@@ -60,6 +68,9 @@ export interface RenewableSaleResult {
     annualSmpRevenueWon: number;
     annualRecRevenueWon: number;
     estimatedAnnualRevenueWon: number;
+    monthlySmpRevenueWon: number;
+    monthlyRecRevenueWon: number;
+    estimatedMonthlyRevenueWon: number;
     assumptions: string[];
   };
   answerSummary: string;
@@ -144,9 +155,105 @@ function wonAmountFrom(text: string, patterns: RegExp[]): number | undefined {
   return undefined;
 }
 
+function normalizeEnergyToKwh(value: number, unit?: string): number {
+  return /mwh|메가와트시/i.test(unit ?? '') ? value * 1000 : value;
+}
+
+function annualizeGenerationKwh(value: number, period: GenerationPeriod): number {
+  if (period === 'daily') {
+    return value * 365;
+  }
+  if (period === 'monthly') {
+    return value * 12;
+  }
+  return value;
+}
+
+function parseGenerationWithPeriod(text: string): {
+  annualKwh: number;
+  inputKwh: number;
+  period: GenerationPeriod;
+} | undefined {
+  const normalized = text.replace(/,/g, '');
+  const patterns: Array<{ period: GenerationPeriod; regexes: RegExp[] }> = [
+    {
+      period: 'daily',
+      regexes: [
+        /(?:하루|1일|일\s*평균|일|매일)\s*(\d+(?:\.\d+)?)\s*(kwh|kw\s*h|mwh|mw\s*h|킬로와트시|키로와트시|메가와트시)/i,
+        /(\d+(?:\.\d+)?)\s*(kwh|kw\s*h|mwh|mw\s*h|킬로와트시|키로와트시|메가와트시)\s*(?:씩)?\s*(?:하루|1일|일\s*평균|일|매일|\/\s*일)/i
+      ]
+    },
+    {
+      period: 'monthly',
+      regexes: [
+        /(?:월|매월|한달|한\s*달)\s*(\d+(?:\.\d+)?)\s*(kwh|kw\s*h|mwh|mw\s*h|킬로와트시|키로와트시|메가와트시)/i,
+        /(\d+(?:\.\d+)?)\s*(kwh|kw\s*h|mwh|mw\s*h|킬로와트시|키로와트시|메가와트시)\s*(?:씩)?\s*(?:월|매월|한달|한\s*달|\/\s*월)/i
+      ]
+    },
+    {
+      period: 'annual',
+      regexes: [
+        /(?:연|연간|1년|년)\s*(\d+(?:\.\d+)?)\s*(만|천|억)?\s*(kwh|kw\s*h|mwh|mw\s*h|킬로와트시|키로와트시|메가와트시)/i,
+        /(\d+(?:\.\d+)?)\s*(만|천|억)?\s*(kwh|kw\s*h|mwh|mw\s*h|킬로와트시|키로와트시|메가와트시)\s*\/?\s*(?:년|연간|1년)/i
+      ]
+    }
+  ];
+
+  for (const { period, regexes } of patterns) {
+    for (const regex of regexes) {
+      const match = normalized.match(regex);
+      if (!match) {
+        continue;
+      }
+      const rawValue = Number.parseFloat(match[1]);
+      if (!Number.isFinite(rawValue)) {
+        continue;
+      }
+      const scale = match[2] === '억' ? 100000000 : match[2] === '만' ? 10000 : match[2] === '천' ? 1000 : 1;
+      const unit = match[3] ?? match[2];
+      const inputKwh = normalizeEnergyToKwh(rawValue * scale, unit);
+      return {
+        inputKwh,
+        period,
+        annualKwh: annualizeGenerationKwh(inputKwh, period)
+      };
+    }
+  }
+  return undefined;
+}
+
+function inferRenewableRequestType(text: string): RenewableRequestType {
+  if (/계통|연계|여유용량|분산전원|변전소|DL|배전선로/i.test(text)) {
+    return 'grid_interconnection';
+  }
+  if (/계약현황|계약된|발전기\s*개수|설비가\s*얼마|설비가\s*얼마나|발전용량|공식\s*데이터|현황\s*조회/i.test(text)) {
+    return 'contract_status';
+  }
+  if (isRenewableConceptOnlyQuestion(text)) {
+    return 'concept';
+  }
+  if (/수익|매출|얼마|계산|돈|판매|smp|rec|ppa|팔면|팔려면/i.test(text)) {
+    return 'revenue';
+  }
+  return 'general';
+}
+
+function inferRequestedRevenuePeriod(text: string): RevenuePeriod {
+  return /월\s*수익|월\s*매출|한\s*달\s*수익|한달\s*수익|월\s*얼마/i.test(text) ? 'monthly' : 'annual';
+}
+
 function parseRenewableInput(input: RenewableSaleInput): RenewableSaleResult['parsed'] {
   const text = input.text ?? '';
   const genSrcCd = input.genSrcCd ?? (/풍력/.test(text) ? '3' : /소수력/.test(text) ? '2' : '1');
+  const requestType = inferRenewableRequestType(text);
+  const generationWithPeriod = parseGenerationWithPeriod(text);
+  const expectedAnnualGenerationKwh =
+    generationWithPeriod?.annualKwh ??
+    input.expectedAnnualGenerationKwh ??
+    scaledNumberFrom(text, [
+      /연(?:간)?\s*(\d+(?:\.\d+)?)\s*(만|천|억)?\s*(?:kwh|kw\s*h|킬로와트시|키로와트시)/i,
+      /(\d+(?:\.\d+)?)\s*(만|천|억)?\s*(?:kwh|kw\s*h|킬로와트시|키로와트시)\s*\/?\s*(?:년|연간|1년)/i
+    ]);
   return {
     locationText: input.locationText,
     year: input.year ?? currentYear() - 1,
@@ -154,18 +261,17 @@ function parseRenewableInput(input: RenewableSaleInput): RenewableSaleResult['pa
     cityCd: input.cityCd,
     genSrcCd,
     generationSource: input.generationSource ?? (genSrcCd === '1' ? '태양광' : genSrcCd === '2' ? '소수력' : genSrcCd === '3' ? '풍력' : '신재생'),
+    requestType,
     solarCapacityKw:
       input.solarCapacityKw ??
       numberFrom(text, [
-        /(\d+(?:\.\d+)?)\s*kw\s*(?:태양광|발전|설비)?/i,
+        /(\d+(?:\.\d+)?)\s*kw(?!\s*h|h)\s*(?:태양광|발전|설비)?/i,
         /(\d+(?:\.\d+)?)\s*킬로와트/
       ]),
-    expectedAnnualGenerationKwh:
-      input.expectedAnnualGenerationKwh ??
-      scaledNumberFrom(text, [
-        /연(?:간)?\s*(\d+(?:\.\d+)?)\s*(만|천|억)?\s*(?:kwh|kw\s*h|킬로와트시|키로와트시)/i,
-        /(\d+(?:\.\d+)?)\s*(만|천|억)?\s*(?:kwh|kw\s*h|킬로와트시|키로와트시)\s*\/?\s*(?:년|연간|1년)/i
-      ]),
+    expectedAnnualGenerationKwh,
+    generationInputKwh: generationWithPeriod?.inputKwh,
+    generationInputPeriod: generationWithPeriod?.period,
+    requestedRevenuePeriod: inferRequestedRevenuePeriod(text),
     recWeight: input.recWeight ?? numberFrom(text, [/가중치\s*(\d+(?:\.\d+)?)/]) ?? 1,
     smpWonPerKwh:
       input.smpWonPerKwh ??
@@ -393,10 +499,15 @@ function buildRevenueEstimate(parsed: RenewableSaleResult['parsed']): RenewableS
   }
   const annualSmpRevenueWon = Math.round(parsed.expectedAnnualGenerationKwh * parsed.smpWonPerKwh);
   const annualRecRevenueWon = Math.round((parsed.expectedAnnualGenerationKwh / 1000) * parsed.recWeight * parsed.recPriceWonPerRec);
+  const monthlySmpRevenueWon = Math.round(annualSmpRevenueWon / 12);
+  const monthlyRecRevenueWon = Math.round(annualRecRevenueWon / 12);
   return {
     annualSmpRevenueWon,
     annualRecRevenueWon,
     estimatedAnnualRevenueWon: annualSmpRevenueWon + annualRecRevenueWon,
+    monthlySmpRevenueWon,
+    monthlyRecRevenueWon,
+    estimatedMonthlyRevenueWon: monthlySmpRevenueWon + monthlyRecRevenueWon,
     assumptions: [
       'SMP 수익 = 연 발전량(kWh) x SMP(원/kWh)',
       'REC 수익 = 연 발전량(MWh) x REC 가중치 x REC 가격(원/REC)',
@@ -432,7 +543,9 @@ function isRenewableConceptOnlyQuestion(text?: string): boolean {
   if (!text) {
     return false;
   }
-  return /(?:뭐야|무엇|뜻|의미|설명|차이|비교)/.test(text) && !/(?:수익|매출|얼마|계산|조회|계통|연계|여유|계약현황|판매\s*가능)/.test(text);
+  const asksConcept = /(?:뭐야|무엇|뜻|의미|설명|차이|비교|역할|개념)/.test(text);
+  const asksCalculation = /(?:매출|얼마|계산|조회|계통|연계|여유|계약현황|판매\s*가능|\d+(?:\.\d+)?\s*(?:kwh|kw\s*h|mwh|mw\s*h|kw))/i.test(text);
+  return asksConcept && !asksCalculation;
 }
 
 function requiresRenewableLocation(text?: string): boolean {
@@ -456,7 +569,21 @@ function buildRenewableClarifyingQuestions(input: {
   if (requiresLocation && !parsed.locationText && !parsed.metroCd) {
     questions.push('설치 예정 위치 또는 시도/시군구 정보를 알려주세요.');
   }
-  if (!hasRevenueEstimate) {
+  if (parsed.requestType === 'grid_interconnection') {
+    if (!parsed.locationText && !parsed.metroCd) {
+      questions.push('계통연계 여유 확인은 설치 예정 주소를 시도/시군구/동·면/리/지번 또는 변전소 코드 수준으로 알려주세요.');
+    } else {
+      questions.push('가능하면 동·면, 리, 지번 또는 변전소 코드를 추가로 알려주세요.');
+    }
+    return Array.from(new Set(questions));
+  }
+  if (parsed.requestType === 'contract_status') {
+    if (!parsed.locationText && !parsed.metroCd) {
+      questions.push('계약현황을 볼 시도/시군구와 조회 연도를 알려주세요.');
+    }
+    return Array.from(new Set(questions));
+  }
+  if (!hasRevenueEstimate && parsed.requestType !== 'general') {
     if (typeof parsed.expectedAnnualGenerationKwh !== 'number') {
       questions.push('예상 연 발전량(kWh)을 알려주세요.');
     }
@@ -479,12 +606,25 @@ function buildRenewableSummary(input: {
 }): string {
   const parts: string[] = [];
   if (input.revenueEstimate) {
+    const generationNote =
+      input.parsed.generationInputKwh && input.parsed.generationInputPeriod
+        ? `입력 발전량 ${input.parsed.generationInputKwh}kWh/${input.parsed.generationInputPeriod}을 연 ${input.parsed.expectedAnnualGenerationKwh}kWh로 환산했습니다.`
+        : `${input.parsed.generationSource} 연 발전량 ${input.parsed.expectedAnnualGenerationKwh}kWh 기준입니다.`;
+    parts.push(generationNote);
     parts.push(
-      `${input.parsed.generationSource} 연 발전량 ${input.parsed.expectedAnnualGenerationKwh}kWh 기준 예상 연 매출은 약 ${input.revenueEstimate.estimatedAnnualRevenueWon.toLocaleString('ko-KR')}원입니다.`
+      input.parsed.requestedRevenuePeriod === 'monthly'
+        ? `예상 월 매출은 약 ${input.revenueEstimate.estimatedMonthlyRevenueWon.toLocaleString('ko-KR')}원입니다. 연 환산 매출은 약 ${input.revenueEstimate.estimatedAnnualRevenueWon.toLocaleString('ko-KR')}원입니다.`
+        : `예상 연 매출은 약 ${input.revenueEstimate.estimatedAnnualRevenueWon.toLocaleString('ko-KR')}원입니다.`
     );
   } else {
     parts.push(...input.conceptLines);
-    parts.push('신재생 판매 수익을 계산하려면 위치/설비용량 외에 예상 연 발전량, SMP, REC 가격 또는 KPX API endpoint 매핑이 필요합니다.');
+    if (input.parsed.requestType === 'contract_status') {
+      parts.push('신재생 계약현황은 지역과 연도를 기준으로 발전원별 설비 개수와 용량을 조회하는 기능입니다.');
+    } else if (input.parsed.requestType === 'grid_interconnection') {
+      parts.push('계통연계 여유 확인은 설치 예정 주소를 동·면/리/지번 또는 변전소 코드 수준으로 좁혀야 합니다.');
+    } else if (input.parsed.requestType === 'revenue') {
+      parts.push('신재생 판매 수익을 계산하려면 예상 연 발전량, SMP, REC 가격 또는 KPX API endpoint 매핑이 필요합니다.');
+    }
   }
   if (input.revenueEstimate) {
     parts.push(...input.conceptLines);
@@ -512,13 +652,26 @@ function buildRenewableUserFacingSummary(input: {
 }): string[] {
   const summary: string[] = [];
   if (input.revenueEstimate) {
-    summary.push(`예상 연 매출: 약 ${input.revenueEstimate.estimatedAnnualRevenueWon.toLocaleString('ko-KR')}원`);
-    summary.push(
-      `SMP ${input.revenueEstimate.annualSmpRevenueWon.toLocaleString('ko-KR')}원 + REC ${input.revenueEstimate.annualRecRevenueWon.toLocaleString('ko-KR')}원 기준`
-    );
+    if (input.parsed.requestedRevenuePeriod === 'monthly') {
+      summary.push(`예상 월 매출: 약 ${input.revenueEstimate.estimatedMonthlyRevenueWon.toLocaleString('ko-KR')}원`);
+      summary.push(
+        `월 환산 SMP ${input.revenueEstimate.monthlySmpRevenueWon.toLocaleString('ko-KR')}원 + REC ${input.revenueEstimate.monthlyRecRevenueWon.toLocaleString('ko-KR')}원 기준`
+      );
+    } else {
+      summary.push(`예상 연 매출: 약 ${input.revenueEstimate.estimatedAnnualRevenueWon.toLocaleString('ko-KR')}원`);
+      summary.push(
+        `SMP ${input.revenueEstimate.annualSmpRevenueWon.toLocaleString('ko-KR')}원 + REC ${input.revenueEstimate.annualRecRevenueWon.toLocaleString('ko-KR')}원 기준`
+      );
+    }
   } else {
     summary.push(...input.conceptLines.slice(0, 2));
-    summary.push('신재생 판매 수익 계산에는 연 발전량, SMP, REC 가격이 필요합니다.');
+    if (input.parsed.requestType === 'contract_status') {
+      summary.push('계약현황 조회에는 지역과 조회 연도가 필요합니다.');
+    } else if (input.parsed.requestType === 'grid_interconnection') {
+      summary.push('계통연계 조회에는 상세 주소 또는 변전소 코드가 필요합니다.');
+    } else if (input.parsed.requestType === 'revenue') {
+      summary.push('신재생 판매 수익 계산에는 연 발전량, SMP, REC 가격이 필요합니다.');
+    }
   }
   if (input.revenueEstimate) {
     summary.push(...input.conceptLines.slice(0, 1));
@@ -556,8 +709,10 @@ export async function analyzeRenewableEnergySale(input: RenewableSaleInput): Pro
     cityCd = cityCd ?? matchCodeByText(cityCodes.records.filter((code) => !metroCd || code.uppoCd === metroCd), resolvedLocationText);
   }
 
+  const shouldFetchRenewableContracts = parsed.requestType !== 'grid_interconnection';
+  const shouldFetchMarket = parsed.requestType === 'revenue';
   const renewableContracts =
-    shouldUseLiveApi && metroCd
+    shouldUseLiveApi && shouldFetchRenewableContracts && metroCd
       ? await fetchKepcoRenewableContracts({ year: parsed.year, metroCd, genSrcCd: parsed.genSrcCd })
       : undefined;
   const hasDispersedDetail = Boolean(input.substCd || input.addrLidong || input.addrLi || input.addrJibun);
@@ -573,7 +728,7 @@ export async function analyzeRenewableEnergySale(input: RenewableSaleInput): Pro
       : undefined;
 
   const smp =
-    !shouldUseLiveApi || typeof parsed.smpWonPerKwh === 'number'
+    !shouldUseLiveApi || !shouldFetchMarket || typeof parsed.smpWonPerKwh === 'number'
       ? undefined
       : await fetchMarketValue({
           endpointName: 'KPX_SMP_DEMAND_ENDPOINT',
@@ -582,7 +737,7 @@ export async function analyzeRenewableEnergySale(input: RenewableSaleInput): Pro
           valueFieldHints: ['smp', '육지smp', '제주smp', 'landsmp', 'jejusmp']
         });
   const rec =
-    !shouldUseLiveApi || typeof parsed.recPriceWonPerRec === 'number'
+    !shouldUseLiveApi || !shouldFetchMarket || typeof parsed.recPriceWonPerRec === 'number'
       ? undefined
       : await fetchMarketValue({
           endpointName: 'KPX_REC_SPOT_ENDPOINT',

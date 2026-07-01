@@ -165,16 +165,16 @@ export const PUBLIC_API_CATALOG: PublicApiDefinition[] = [
   },
   {
     code: 'EV3',
-    label: '한국환경공단 전기자동차 충전소 정보 API',
-    provider: '한국환경공단',
+    label: '한국전력공사 전기차 충전소 운영정보 API',
+    provider: '한국전력공사',
     area: 'ev_charging',
-    sourceUrl: 'https://www.data.go.kr/data/15076352/openapi.do',
+    sourceUrl: 'https://www.data.go.kr/data/15147132/openapi.do',
     auth: 'service_key',
-    credentialNames: ['EV_CHARGER_SERVICE_KEY', 'DATA_GO_KR_SERVICE_KEY'],
+    credentialNames: ['KEPCO_BIGDATA_API_KEY'],
     runtimeStatus: 'implemented',
-    usedFor: ['zcode 기반 충전소 정보 조회', '충전기 타입', '현재 상태 병합', '좌표/거리 기반 내부 후보 랭킹'],
+    usedFor: ['한전 충전소 운영정보 조회', '충전기 타입', '현재 상태', '주소/좌표/거리 기반 내부 후보 랭킹'],
     mvpBoundary:
-      '공공 API는 주소/좌표 직접 검색이 아니라 지역코드 기반 조회입니다. MCP가 카카오 위치 API로 좌표를 잡고, 조회 결과를 거리/커넥터/출력 조건으로 내부 필터링합니다. 외부 API가 타임아웃/무응답이면 임의 후보를 만들지 않고 unavailable로 반환합니다. 실제 예약 확정은 충전사업자 연계가 필요합니다.'
+      '한전 API는 충전소 운영정보 전체 데이터를 제공하므로 MCP가 사용자의 위치 표현을 주소/좌표/키워드로 정규화한 뒤 거리/커넥터/출력 조건으로 내부 필터링합니다. 외부 API가 타임아웃/무응답이면 임의 후보를 만들지 않고 unavailable로 반환합니다. 실제 예약 확정은 충전사업자 연계가 필요합니다.'
   },
   {
     code: 'W1',

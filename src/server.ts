@@ -40,6 +40,7 @@ const civilServiceSchema = z.enum([
   'move_settlement',
   'new_connection',
   'contract_change',
+  'contract_termination',
   'auto_payment',
   'bill_delivery',
   'welfare_discount',
@@ -530,7 +531,7 @@ function createServer(): McpServer {
     {
       title: 'Plan EV Charging Visit',
       description:
-        'Use for EV charging route/visit planning, connector matching, and missing-info clarification such as "서울 강남구 근처 충전소 찾아줘", "위도/경도 주변 DC콤보 찾아줘", "모델Y DC콤보 되는 충전기 위주로 플랜A 플랜B", "구형 레이EV 차데모 충전소만", "대전 가는 길에 100kW 이상 급속 충전소", "30분 뒤 덕평휴게소 근처에서 40kWh 충전하고 싶어", or "차데모 충전소만 찾아줘". Call this even when location/route is missing; the tool returns clarifyingQuestions instead of letting the model ask without MCP. Do not invent connectorType when the user did not provide a vehicle model or connector. When locationText/zcode/zscode/coordinates are provided and EV_CHARGER_SERVICE_KEY is configured, it calls the public KECO EV charger API for real charger location/status candidates, then builds plan A/B. If the public API fails or returns no matching candidates, report that failure instead of inventing replacement chargers. It clearly separates status-based visit planning from real reservation confirmation.',
+        'Use for EV charging route/visit planning, connector matching, and missing-info clarification such as "서울 강남구 근처 충전소 찾아줘", "위도/경도 주변 DC콤보 찾아줘", "모델Y DC콤보 되는 충전기 위주로 플랜A 플랜B", "구형 레이EV 차데모 충전소만", "대전 가는 길에 100kW 이상 급속 충전소", "30분 뒤 덕평휴게소 근처에서 40kWh 충전하고 싶어", or "차데모 충전소만 찾아줘". Call this even when location/route is missing; the tool returns clarifyingQuestions instead of letting the model ask without MCP. Do not invent connectorType when the user did not provide a vehicle model or connector. When locationText/coordinates are provided and KEPCO_BIGDATA_API_KEY is configured, it calls the KEPCO EV charge management API for real charger location/status candidates, then builds plan A/B. If the public API fails or returns no matching candidates, report that failure instead of inventing replacement chargers. It clearly separates status-based visit planning from real reservation confirmation.',
       inputSchema: {
         text: z.string().min(2).max(2000).optional().describe('Natural-language EV charging request.'),
         origin: z.string().min(1).max(120).optional().describe('Optional origin.'),

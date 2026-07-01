@@ -1,4 +1,3 @@
-import { XMLParser } from 'fast-xml-parser';
 import { getContestCredential } from './contestCredentials.js';
 import { resolveKakaoLocation, type KakaoLocationResult } from './kakaoLocal.js';
 import { getUserVisibleOfficialDataSources, type IntegrationBoundary, type OfficialDataSource } from './kepcoData.js';
@@ -125,10 +124,16 @@ export interface EvChargingPlanResult {
   disclaimer: string;
 }
 
-const KECO_EV_CHARGER_BASE_URL = 'https://apis.data.go.kr/B552584/EvCharger';
-const KECO_EV_CHARGER_INFO_ENDPOINT = `${KECO_EV_CHARGER_BASE_URL}/getChargerInfo`;
-const KECO_EV_CHARGER_STATUS_ENDPOINT = `${KECO_EV_CHARGER_BASE_URL}/getChargerStatus`;
-const KECO_EV_CHARGER_TIMEOUT_MS = 15000;
+const KEPCO_EV_CHARGE_MANAGE_ENDPOINT = 'https://bigdata.kepco.co.kr/openapi/v1/EVchargeManage.do';
+const KEPCO_EV_CHARGE_MANAGE_TIMEOUT_MS = 15000;
+const KEPCO_EV_CHARGE_MANAGE_CACHE_TTL_MS = 5 * 60 * 1000;
+
+let kepcoEvChargeManageCache:
+  | {
+      fetchedAt: number;
+      items: Array<Record<string, unknown>>;
+    }
+  | undefined;
 
 const ZCODE_ALIASES: Array<{ zcode: string; aliases: string[] }> = [
   { zcode: '11', aliases: ['서울', '서울특별시'] },
@@ -465,121 +470,71 @@ function normalizeConnectorTypes(connectorType?: string): string[] {
   return Array.from(new Set(connectors));
 }
 
-function connectorTypeFromKecoCode(chgerType?: string): string | undefined {
-  const code = String(chgerType ?? '').padStart(2, '0');
+function connectorTypeFromKepcoCode(cpTp?: string): string | undefined {
+  const code = String(cpTp ?? '').padStart(2, '0');
   const labels: Record<string, string> = {
-    '01': 'CHAdeMO',
-    '02': 'AC완속',
-    '03': 'CHAdeMO+AC3상',
-    '04': 'DC콤보',
-    '05': 'CHAdeMO+DC콤보',
-    '06': 'CHAdeMO+AC3상+DC콤보',
-    '07': 'AC3상',
-    '89': 'H2'
+    '01': 'B타입(5핀)',
+    '02': 'C타입(5핀)',
+    '03': 'BC타입(5핀)',
+    '04': 'BC타입(7핀)',
+    '05': 'CHAdeMO',
+    '06': 'AC3상',
+    '07': 'DC콤보',
+    '08': 'CHAdeMO+DC콤보',
+    '09': 'CHAdeMO+AC3상',
+    '10': 'CHAdeMO+DC콤보+AC3상'
   };
-  return labels[code] ?? chgerType;
+  return labels[code] ?? cpTp;
 }
 
-interface KecoEvParsedResponse {
-  response?: {
-    body?: {
-      items?: { item?: Record<string, unknown> | Array<Record<string, unknown>> };
-      totalCount?: string | number;
-    };
-    header?: { resultCode?: string; resultMsg?: string };
-  };
-  OpenAPI_ServiceResponse?: {
-    cmmMsgHeader?: { errMsg?: string; returnAuthMsg?: string; returnReasonCode?: string };
-  };
+function chargeTypeFromKepcoCode(chargeTp?: string): string | undefined {
+  const code = String(chargeTp ?? '').trim();
+  if (code === '1') return '완속';
+  if (code === '2') return '급속';
+  return code || undefined;
 }
 
-function parseKecoEvItems(xml: string): {
-  items: Array<Record<string, unknown>>;
-  errorMessage?: string;
-} {
-  const parsed = new XMLParser({ ignoreAttributes: false, parseTagValue: false }).parse(xml) as KecoEvParsedResponse;
-  const authError = parsed.OpenAPI_ServiceResponse?.cmmMsgHeader;
-  if (authError) {
-    return {
-      items: [],
-      errorMessage: authError.returnAuthMsg ?? authError.errMsg ?? authError.returnReasonCode ?? 'unknown'
-    };
-  }
-  const resultCode = parsed.response?.header?.resultCode;
-  if (resultCode && resultCode !== '00') {
-    return {
-      items: [],
-      errorMessage: parsed.response?.header?.resultMsg ?? resultCode
-    };
-  }
-  return { items: ensureArray(parsed.response?.body?.items?.item) };
-}
-
-function chargerKeyFromKecoItem(item: Record<string, unknown>): string | undefined {
-  const statId = String(item.statId ?? '').trim();
-  const chgerId = String(item.chgerId ?? '').trim();
-  return statId && chgerId ? `${statId}:${chgerId}` : undefined;
-}
-
-function buildStatusByChargerKey(items: Array<Record<string, unknown>>): Map<string, Record<string, unknown>> {
-  const statusByKey = new Map<string, Record<string, unknown>>();
-  for (const item of items) {
-    const key = chargerKeyFromKecoItem(item);
-    if (key) {
-      statusByKey.set(key, item);
-    }
-  }
-  return statusByKey;
-}
-
-function mergeKecoStatus(
-  infoItems: Array<Record<string, unknown>>,
-  statusByKey: Map<string, Record<string, unknown>>
-): Array<Record<string, unknown>> {
-  return infoItems.map((item) => {
-    const status = statusByKey.get(chargerKeyFromKecoItem(item) ?? '');
-    return status ? { ...item, ...status } : item;
-  });
-}
-
-function chargerStatusFromKeco(stat?: string | number): ChargerStatus {
+function chargerStatusFromKepco(stat?: string | number): ChargerStatus {
   const code = String(stat ?? '');
-  if (code === '2') return 'available';
-  if (code === '3') return 'charging';
-  if (code === '4' || code === '5') return 'faulted';
+  if (code === '1') return 'available';
+  if (code === '2') return 'charging';
+  if (code === '3' || code === '4' || code === '5') return 'faulted';
   return 'unknown';
 }
 
-export function mapKecoChargerInfoItemToCandidate(
+export function mapKepcoChargerManageItemToCandidate(
   item: Record<string, unknown>,
   input: Pick<EvChargingPlanInput, 'latitude' | 'longitude'>
 ): ChargerCandidateInput | undefined {
-  const name = String(item.statNm ?? item.statnm ?? '').trim();
+  const stationName = String(item.csNm ?? item.statNm ?? item.statnm ?? '').trim();
+  const chargerName = String(item.cpNm ?? item.chgerNm ?? '').trim();
+  const name = [stationName, chargerName].filter(Boolean).join(' ').trim();
   if (!name) {
     return undefined;
   }
   const lat = parseNumber(item.lat);
-  const lng = parseNumber(item.lng);
-  const status = chargerStatusFromKeco(item.stat as string | number | undefined);
+  const lng = parseNumber(item.longi) ?? parseNumber(item.lng);
+  const status = chargerStatusFromKepco(item.cpStat as string | number | undefined);
   const distanceKm =
     typeof input.latitude === 'number' && typeof input.longitude === 'number' && typeof lat === 'number' && typeof lng === 'number'
       ? Number(haversineKm(input.latitude, input.longitude, lat, lng).toFixed(2))
       : undefined;
+  const chargerType = chargeTypeFromKepcoCode(String(item.chargeTp ?? '')) ?? (String(item.cpNm ?? '').trim() || undefined);
 
   return {
     name,
     address: String(item.addr ?? '').trim() || undefined,
-    operator: String(item.busiNm ?? item.bnm ?? '').trim() || undefined,
-    chargerType: String(item.chgerType ?? '').trim() || undefined,
-    connectorType: connectorTypeFromKecoCode(String(item.chgerType ?? '')),
-    outputKw: parseNumber(item.output) ?? parseNumber(item.powerType),
+    operator: '한국전력공사',
+    chargerType,
+    connectorType: connectorTypeFromKepcoCode(String(item.cpTp ?? item.chgerType ?? '')),
+    outputKw: parseNumber(item.output) ?? parseNumber(item.powerType) ?? (String(item.chargeTp ?? '') === '2' ? 50 : 7),
     distanceKm,
     status,
     availableCount: status === 'available' ? 1 : 0,
     chargingCount: status === 'charging' ? 1 : 0,
     faultedCount: status === 'faulted' ? 1 : 0,
     totalCount: 1,
-    statusUpdatedAt: String(item.statUpdDt ?? '').trim() || undefined,
+    statusUpdatedAt: String(item.statUpdatedatetime ?? item.statUpdDt ?? '').trim() || undefined,
     estimatedArrivalMinutes: undefined
   };
 }
@@ -919,6 +874,7 @@ const EV_LOCATION_STOPWORDS = [
 function normalizeLocationToken(token: string): string {
   return token
     .replace(/[.,!?()[\]{}]/g, '')
+    .replace(/(?:인데요|인데|입니다|이에요|예요|이고|이라서|이라|라고|라고요|임)$/g, '')
     .replace(/(?:에서|으로|까지|부터|쪽으로|쪽|근처|주변|부근|인근|가는|가|은|는|이|가|을|를|에)$/g, '')
     .trim();
 }
@@ -958,7 +914,7 @@ function hasSpecificLocationHint(text?: string): boolean {
   if (/(?:특별시|광역시|특별자치시|특별자치도|휴게소|IC|JC|나들목|분기점|역|공항|터미널|주차장)/i.test(withoutDirection)) {
     return true;
   }
-  if (/[가-힣A-Za-z0-9]{2,}(?:시|군|구|동|읍|면|리)(?:\s|$|,|\.|근처|주변|부근|에서|까지|로|으로)/i.test(withoutDirection)) {
+  if (/[가-힣A-Za-z0-9]{2,}(?:시|군|구|동|읍|면|리)(?:\s|$|,|\.|근처|주변|부근|에서|까지|로|으로|인데|인데요)/i.test(withoutDirection)) {
     return true;
   }
   const compactText = withoutDirection.replace(/\s+/g, '');
@@ -1084,22 +1040,15 @@ async function enrichEvInputWithKakaoLocation(input: EvChargingPlanInput): Promi
   };
 }
 
-function buildKecoUrl(endpoint: string, input: EvChargingPlanInput, serviceKey: string, zcode?: string): string {
+function buildKepcoEvChargeManageUrl(serviceKey: string): string {
   const params = new URLSearchParams();
-  params.set('pageNo', '1');
-  const defaultRows = typeof input.latitude === 'number' && typeof input.longitude === 'number' ? 1000 : 100;
-  params.set('numOfRows', String(Math.min(Math.max(input.apiNumOfRows ?? defaultRows, 10), 9999)));
-  if (endpoint === KECO_EV_CHARGER_STATUS_ENDPOINT) {
-    params.set('period', String(Math.min(Math.max(input.apiPeriodMinutes ?? 5, 1), 10)));
-  }
-  if (zcode) {
-    params.set('zcode', zcode);
-  }
-  return `${endpoint}?ServiceKey=${serviceKey}&${params.toString()}`;
+  params.set('apiKey', serviceKey);
+  params.set('returnType', 'json');
+  return `${KEPCO_EV_CHARGE_MANAGE_ENDPOINT}?${params.toString()}`;
 }
 
 function getEvChargerServiceKey(): string | undefined {
-  return getContestCredential('EV_CHARGER_SERVICE_KEY') || getContestCredential('DATA_GO_KR_SERVICE_KEY');
+  return getContestCredential('KEPCO_BIGDATA_API_KEY');
 }
 
 function hasEvChargerServiceKey(): boolean {
@@ -1111,7 +1060,7 @@ function describeFetchError(error: unknown): string {
     return String(error);
   }
   if (error.name === 'AbortError') {
-    return `timeout after ${KECO_EV_CHARGER_TIMEOUT_MS}ms`;
+    return `timeout after ${KEPCO_EV_CHARGE_MANAGE_TIMEOUT_MS}ms`;
   }
   const cause = (error as Error & { cause?: unknown }).cause;
   if (cause instanceof Error) {
@@ -1155,7 +1104,7 @@ function filterLiveCandidates(candidates: ChargerCandidateInput[], input: EvChar
     .slice(0, 20);
 }
 
-async function fetchKecoEvChargerCandidates(input: EvChargingPlanInput): Promise<{
+async function fetchKepcoEvChargerCandidates(input: EvChargingPlanInput): Promise<{
   candidates: ChargerCandidateInput[];
   endpoint?: string;
   zcode?: string;
@@ -1171,36 +1120,29 @@ async function fetchKecoEvChargerCandidates(input: EvChargingPlanInput): Promise
       zcode,
       zscode,
       fetchedCount: 0,
-      message: '서버 소스코드에 EV_CHARGER_SERVICE_KEY 또는 DATA_GO_KR_SERVICE_KEY가 등록되어 있지 않아 공공데이터포털 충전소 API를 호출하지 않았습니다.'
+      message: '서버 소스코드에 KEPCO_BIGDATA_API_KEY가 등록되어 있지 않아 한전 전기차 충전소 운영정보 API를 호출하지 않았습니다.'
     };
   }
-  if (!zcode && (typeof input.latitude !== 'number' || typeof input.longitude !== 'number')) {
-    return {
-      candidates: [],
-      fetchedCount: 0,
-      zcode,
-      zscode,
-      message: '충전소 API 조회에는 시도 단위 위치명 또는 zcode가 필요합니다. 예: 서울 강남구, 경기 이천, zcode=11.'
-    };
-  }
-
-  const infoEndpoint = buildKecoUrl(KECO_EV_CHARGER_INFO_ENDPOINT, input, serviceKey, zcode);
-  const statusEndpoint = buildKecoUrl(KECO_EV_CHARGER_STATUS_ENDPOINT, input, serviceKey, zcode);
+  const endpoint = buildKepcoEvChargeManageUrl(serviceKey);
+  let items: Array<Record<string, unknown>>;
+  if (kepcoEvChargeManageCache && Date.now() - kepcoEvChargeManageCache.fetchedAt < KEPCO_EV_CHARGE_MANAGE_CACHE_TTL_MS) {
+    items = kepcoEvChargeManageCache.items;
+  } else {
   let response: Response;
-  let xml: string;
+    let text: string;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), KECO_EV_CHARGER_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), KEPCO_EV_CHARGE_MANAGE_TIMEOUT_MS);
   try {
-    response = await fetch(infoEndpoint, { signal: controller.signal });
-    xml = await response.text();
+      response = await fetch(endpoint, { signal: controller.signal });
+      text = await response.text();
   } catch (error) {
     return {
       candidates: [],
-      endpoint: KECO_EV_CHARGER_INFO_ENDPOINT,
+        endpoint: KEPCO_EV_CHARGE_MANAGE_ENDPOINT,
       zcode,
       zscode,
       fetchedCount: 0,
-      message: `공공데이터포털 충전소 API 네트워크 오류: ${describeFetchError(error)}`
+        message: `한전 전기차 충전소 운영정보 API 네트워크 오류: ${describeFetchError(error)}`
     };
   } finally {
     clearTimeout(timeout);
@@ -1208,78 +1150,54 @@ async function fetchKecoEvChargerCandidates(input: EvChargingPlanInput): Promise
   if (!response.ok) {
     return {
       candidates: [],
-      endpoint: KECO_EV_CHARGER_INFO_ENDPOINT,
+        endpoint: KEPCO_EV_CHARGE_MANAGE_ENDPOINT,
       zcode,
       zscode,
       fetchedCount: 0,
-      message: `공공데이터포털 충전소 API HTTP 오류: ${response.status}`
+        message: `한전 전기차 충전소 운영정보 API HTTP 오류: ${response.status}`
     };
   }
 
-  const parsed = new XMLParser({ ignoreAttributes: false, parseTagValue: false }).parse(xml) as {
-    response?: { body?: { items?: { item?: Record<string, unknown> | Array<Record<string, unknown>> }; totalCount?: string | number }; header?: { resultCode?: string; resultMsg?: string } };
-    OpenAPI_ServiceResponse?: { cmmMsgHeader?: { errMsg?: string; returnAuthMsg?: string; returnReasonCode?: string } };
-  };
-  const authError = parsed.OpenAPI_ServiceResponse?.cmmMsgHeader;
-  if (authError) {
+    let parsed: { data?: Array<Record<string, unknown>>; resultMsg?: string; message?: string; error?: string };
+    try {
+      parsed = JSON.parse(text) as typeof parsed;
+    } catch {
     return {
       candidates: [],
-      endpoint: KECO_EV_CHARGER_INFO_ENDPOINT,
+        endpoint: KEPCO_EV_CHARGE_MANAGE_ENDPOINT,
       zcode,
       zscode,
       fetchedCount: 0,
-      message: `공공데이터포털 충전소 API 인증/호출 오류: ${authError.returnAuthMsg ?? authError.errMsg ?? authError.returnReasonCode ?? 'unknown'}`
+        message: '한전 전기차 충전소 운영정보 API JSON 파싱에 실패했습니다.'
     };
   }
-  const resultCode = parsed.response?.header?.resultCode;
-  if (resultCode && resultCode !== '00') {
+    if (!Array.isArray(parsed.data)) {
     return {
       candidates: [],
-      endpoint: KECO_EV_CHARGER_INFO_ENDPOINT,
+        endpoint: KEPCO_EV_CHARGE_MANAGE_ENDPOINT,
       zcode,
       zscode,
       fetchedCount: 0,
-      message: `공공데이터포털 충전소 API 오류: ${parsed.response?.header?.resultMsg ?? resultCode}`
+        message: `한전 전기차 충전소 운영정보 API 응답에 data 배열이 없습니다: ${parsed.resultMsg ?? parsed.message ?? parsed.error ?? 'unknown'}`
     };
   }
-
-  let items = ensureArray(parsed.response?.body?.items?.item);
-  let statusMessage = '';
-  const statusController = new AbortController();
-  const statusTimeout = setTimeout(() => statusController.abort(), KECO_EV_CHARGER_TIMEOUT_MS);
-  try {
-    const statusResponse = await fetch(statusEndpoint, { signal: statusController.signal });
-    const statusXml = await statusResponse.text();
-    if (statusResponse.ok) {
-      const status = parseKecoEvItems(statusXml);
-      if (status.errorMessage) {
-        statusMessage = ` 상태 조회는 실패했습니다: ${status.errorMessage}`;
-      } else if (status.items.length > 0) {
-        items = mergeKecoStatus(items, buildStatusByChargerKey(status.items));
-        statusMessage = ` 상태 조회 ${status.items.length}건을 병합했습니다.`;
-      }
-    } else {
-      statusMessage = ` 상태 조회 HTTP 오류: ${statusResponse.status}`;
-    }
-  } catch (error) {
-    statusMessage = ` 상태 조회 네트워크 오류: ${describeFetchError(error)}`;
-  } finally {
-    clearTimeout(statusTimeout);
+    items = parsed.data;
+    kepcoEvChargeManageCache = { fetchedAt: Date.now(), items };
   }
   const mapped = items
-    .map((item) => mapKecoChargerInfoItemToCandidate(item, input))
+    .map((item) => mapKepcoChargerManageItemToCandidate(item, input))
     .filter((candidate): candidate is ChargerCandidateInput => Boolean(candidate));
   const filtered = filterLiveCandidates(mapped, input);
   return {
     candidates: filtered,
-    endpoint: `${KECO_EV_CHARGER_INFO_ENDPOINT}; ${KECO_EV_CHARGER_STATUS_ENDPOINT}`,
+    endpoint: KEPCO_EV_CHARGE_MANAGE_ENDPOINT,
     zcode,
     zscode,
     fetchedCount: mapped.length,
     message:
       (filtered.length > 0
-        ? `공공데이터포털 전기차 충전소 정보 API에서 ${mapped.length}개 후보를 조회하고 조건에 맞는 ${filtered.length}개 후보를 사용했습니다.`
-        : `공공데이터포털 전기차 충전소 정보 API에서 ${mapped.length}개 후보를 조회했지만 입력 위치/반경/커넥터/출력 조건에 맞는 후보가 없습니다. 좌표가 있다면 radiusKm를 넓히거나 커넥터/출력 조건을 완화해 다시 조회할 수 있습니다.`) + statusMessage
+        ? `한전 전기차 충전소 운영정보 API에서 ${mapped.length}개 후보를 조회하고 조건에 맞는 ${filtered.length}개 후보를 사용했습니다.`
+        : `한전 전기차 충전소 운영정보 API에서 ${mapped.length}개 후보를 조회했지만 입력 위치/반경/커넥터/출력 조건에 맞는 후보가 없습니다. 위치를 시군구/동/건물명까지 좁히거나 반경/커넥터/출력 조건을 완화해 다시 조회할 수 있습니다.`)
   };
 }
 
@@ -1337,7 +1255,7 @@ function buildEvChargingPlan(
     reservationBoundary: {
       currentMvp:
         dataMode === 'live_public_api'
-          ? '공공데이터포털 전기차 충전소 정보 API로 조회한 위치/상태 후보 기준 방문 플랜, 대체 후보, 예약 요청서 수준까지 제공합니다.'
+          ? '한전 전기차 충전소 운영정보 API로 조회한 위치/상태 후보 기준 방문 플랜, 대체 후보, 예약 요청서 수준까지 제공합니다.'
           : dataMode === 'provided_candidates'
             ? '제공된 후보 상태 기준 도착시점 방문 플랜, 대체 후보, 예약 요청서 수준까지 제공합니다.'
             : '실시간 공공데이터 조회나 사용자 제공 후보가 없으면 임의 충전소를 추천하지 않습니다.',
@@ -1351,11 +1269,11 @@ function buildEvChargingPlan(
       integrationBoundary: 'needs_partner_agreement'
     },
     officialDataSources: getUserVisibleOfficialDataSources().filter((source) =>
-      ['keco_ev_charger_api', 'ex_rest_area_charger_data'].includes(source.id)
+      ['kepco_ev_charge_manage_api', 'ex_rest_area_charger_data'].includes(source.id)
     ),
     disclaimer:
       dataMode === 'live_public_api'
-        ? '공공데이터포털 전기차 충전소 정보 API 조회 결과를 기준으로 한 계획입니다. 실제 점유 상태는 도착 전 다시 확인해야 합니다.'
+        ? '한전 전기차 충전소 운영정보 API 조회 결과를 기준으로 한 계획입니다. 실제 점유 상태는 도착 전 다시 확인해야 합니다.'
         : dataMode === 'provided_candidates'
           ? '사용자가 제공한 충전소 후보 상태를 기준으로 한 계획입니다. 실제 점유 상태는 도착 전 다시 확인해야 합니다.'
           : '실시간 공공데이터 조회나 사용자 제공 후보가 없어 방문 플랜을 만들지 않았습니다.'
@@ -1427,7 +1345,7 @@ function buildUnavailableEvChargingPlan(
       integrationBoundary: 'needs_partner_agreement'
     },
     officialDataSources: getUserVisibleOfficialDataSources().filter((source) =>
-      ['keco_ev_charger_api', 'ex_rest_area_charger_data'].includes(source.id)
+      ['kepco_ev_charge_manage_api', 'ex_rest_area_charger_data'].includes(source.id)
     ),
     disclaimer: message
   };
@@ -1461,7 +1379,7 @@ export async function planEvChargingVisitWithLiveData(input: EvChargingPlanInput
 
   const serviceKeyConfigured = hasEvChargerServiceKey();
   const enriched = await enrichEvInputWithKakaoLocation(input);
-  const live = await fetchKecoEvChargerCandidates(enriched.input);
+  const live = await fetchKepcoEvChargerCandidates(enriched.input);
   if (live.candidates.length > 0) {
     return buildEvChargingPlan(enriched.input, live.candidates, 'live_public_api', {
       attempted: true,
